@@ -5,17 +5,21 @@ import "../widgets/glass_container.dart";
 class HomeMoviesPage extends StatefulWidget {
   final List<MovieItem> movies;
   final Set<String> watchlistIds;
+  final bool isSyncingStreamtape;
   final ValueChanged<MovieItem> onPlayMovie;
   final ValueChanged<String> onToggleWatchlist;
   final VoidCallback onOpenSearch;
+  final VoidCallback onRefreshStreamtape;
 
   const HomeMoviesPage({
     super.key,
     required this.movies,
     required this.watchlistIds,
+    this.isSyncingStreamtape = false,
     required this.onPlayMovie,
     required this.onToggleWatchlist,
     required this.onOpenSearch,
+    required this.onRefreshStreamtape,
   });
 
   @override
@@ -28,12 +32,13 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
 
   static const List<String> _genres = [
     "All",
-    "Sci-Fi",
     "Action",
+    "Sci-Fi",
     "Thriller",
-    "Fantasy",
+    "Romance",
     "Drama",
     "Crime",
+    "Comedy",
   ];
 
   @override
@@ -49,12 +54,20 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
             .where((m) => m.genres.contains(_selectedGenre))
             .toList();
 
+    final standaloneMovies =
+        filteredMovies.where((m) => m.episodeNumber == 0).toList();
+    final safedSagarEpisodes = filteredMovies
+        .where(
+            (m) => m.seriesName.toLowerCase().contains("operation safed sagar"))
+        .toList()
+      ..sort((a, b) => a.episodeNumber.compareTo(b.episodeNumber));
+    final stickyLoveEpisodes = filteredMovies
+        .where((m) => m.seriesName.toLowerCase().contains("our sticky love"))
+        .toList()
+      ..sort((a, b) => a.episodeNumber.compareTo(b.episodeNumber));
+
     final continueWatching =
         widget.movies.where((m) => m.watchProgress > 0.0).toList();
-    final trendingMovies =
-        filteredMovies.where((m) => m.isTrending).toList();
-    final newReleases =
-        filteredMovies.where((m) => m.isNewRelease).toList();
 
     return GlassContainer(
       margin: EdgeInsets.zero,
@@ -113,17 +126,27 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                       color: const Color(0xFF00E676).withValues(alpha: 0.45),
                     ),
                   ),
-                  child: const Text(
-                    "CINEMA 4K",
-                    style: TextStyle(
+                  child: Text(
+                    widget.isSyncingStreamtape
+                        ? "SYNCING..."
+                        : "STREAMTAPE (${widget.movies.length})",
+                    style: const TextStyle(
                       color: Color(0xFF00E676),
                       fontSize: 9.5,
                       fontWeight: FontWeight.w900,
-                      letterSpacing: 0.6,
+                      letterSpacing: 0.5,
                     ),
                   ),
                 ),
                 const Spacer(),
+                GlassIconButton(
+                  icon: Icons.cloud_sync_rounded,
+                  tooltip: "Sync Streamtape Library",
+                  size: 38,
+                  color: const Color(0xFF00E676),
+                  onTap: widget.onRefreshStreamtape,
+                ),
+                const SizedBox(width: 8),
                 GlassIconButton(
                   icon: Icons.search_rounded,
                   tooltip: "Search Movies",
@@ -198,7 +221,7 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                   const SizedBox(height: 22),
                   _buildSectionHeader(
                     "Continue Watching",
-                    "Tap any movie to resume instant playback",
+                    "Tap any Streamtape movie to resume instant playback",
                   ),
                   const SizedBox(height: 10),
                   SizedBox(
@@ -214,54 +237,67 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                     ),
                   ),
                 ],
-                const SizedBox(height: 22),
-                _buildSectionHeader(
-                  "Trending Now on niooo",
-                  "Top streamed 4K IMAX titles today",
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: 258,
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: trendingMovies.isNotEmpty
-                        ? trendingMovies.length
-                        : filteredMovies.length,
-                    itemBuilder: (context, index) {
-                      final list = trendingMovies.isNotEmpty
-                          ? trendingMovies
-                          : filteredMovies;
-                      return _buildPosterCard(list[index]);
-                    },
+                if (standaloneMovies.isNotEmpty) ...[
+                  const SizedBox(height: 22),
+                  _buildSectionHeader(
+                    "Blockbuster Movies on Streamtape",
+                    "Full-length feature films from your cloud library",
                   ),
-                ),
-                const SizedBox(height: 22),
-                _buildSectionHeader(
-                  "New 2026 Releases",
-                  "Fresh cinema premieres in Dolby Atmos",
-                ),
-                const SizedBox(height: 12),
-                SizedBox(
-                  height: 258,
-                  child: ListView.builder(
-                    scrollDirection: Axis.horizontal,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    itemCount: newReleases.isNotEmpty
-                        ? newReleases.length
-                        : filteredMovies.length,
-                    itemBuilder: (context, index) {
-                      final list = newReleases.isNotEmpty
-                          ? newReleases
-                          : filteredMovies;
-                      return _buildPosterCard(list[index]);
-                    },
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 258,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: standaloneMovies.length,
+                      itemBuilder: (context, index) {
+                        return _buildPosterCard(standaloneMovies[index]);
+                      },
+                    ),
                   ),
-                ),
+                ],
+                if (safedSagarEpisodes.isNotEmpty) ...[
+                  const SizedBox(height: 22),
+                  _buildSectionHeader(
+                    "Operation Safed Sagar (Season 1)",
+                    "All ${safedSagarEpisodes.length} episodes automatically sorted (EP 01 – EP 06)",
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 258,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: safedSagarEpisodes.length,
+                      itemBuilder: (context, index) {
+                        return _buildPosterCard(safedSagarEpisodes[index]);
+                      },
+                    ),
+                  ),
+                ],
+                if (stickyLoveEpisodes.isNotEmpty) ...[
+                  const SizedBox(height: 22),
+                  _buildSectionHeader(
+                    "Our Sticky Love (Season 1)",
+                    "All ${stickyLoveEpisodes.length} episodes automatically sorted (EP 01 – EP 09)",
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 258,
+                    child: ListView.builder(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      itemCount: stickyLoveEpisodes.length,
+                      itemBuilder: (context, index) {
+                        return _buildPosterCard(stickyLoveEpisodes[index]);
+                      },
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 22),
                 _buildSectionHeader(
-                  "All Featured Movies",
-                  "Complete niooo 4K catalog",
+                  "All Streamtape Account Movies (${filteredMovies.length})",
+                  "Automatically synced and organized from your Streamtape account",
                 ),
                 const SizedBox(height: 10),
                 Padding(
