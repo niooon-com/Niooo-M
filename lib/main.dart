@@ -1,3 +1,4 @@
+import "dart:async";
 import "package:flutter/material.dart";
 
 import "models/movie_models.dart";
@@ -44,7 +45,8 @@ class NioooCinemaMainScreen extends StatefulWidget {
   State<NioooCinemaMainScreen> createState() => _NioooCinemaMainScreenState();
 }
 
-class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen> {
+class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
+    with WidgetsBindingObserver {
   late List<MovieItem> _movies;
   final Set<String> _likedMovieIds = {"Zk2Rbvkpl9tqzjD", "MPDylDpxp9h0Jr"};
   final Set<String> _watchlistIds = {
@@ -58,6 +60,7 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen> {
   bool _isFullScreenAdminOpen = false;
   int _activeNavIndex = 0; // 0: Home, 1: Explore, 2: Watchlist, 3: Profile
   String? _activePlayingMovieId;
+  Timer? _catalogAutoSyncTimer;
 
   String _streamQuality = "4K IMAX HDR";
   bool _dolbyAtmosEnabled = true;
@@ -66,9 +69,30 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     AuthBridgeService.instance.init();
     _movies = List<MovieItem>.from(MovieCatalogData.initialMovies);
-    _syncFromStreamtapeAccount(forceRefresh: false);
+    _syncFromStreamtapeAccount(forceRefresh: true);
+
+    // Automatically poll for new movies added to the server or Streamtape account
+    _catalogAutoSyncTimer = Timer.periodic(
+      const Duration(seconds: 25),
+      (_) => _syncFromStreamtapeAccount(forceRefresh: true),
+    );
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _catalogAutoSyncTimer?.cancel();
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _syncFromStreamtapeAccount(forceRefresh: true);
+    }
   }
 
   Future<void> _syncFromStreamtapeAccount({bool forceRefresh = true}) async {
