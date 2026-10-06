@@ -1,4 +1,3 @@
-import "dart:ui";
 import "package:flutter/material.dart";
 import "../models/movie_models.dart";
 import "../widgets/glass_container.dart";
@@ -6,7 +5,6 @@ import "../widgets/glass_container.dart";
 class HomeMoviesPage extends StatefulWidget {
   final List<MovieItem> movies;
   final Set<String> watchlistIds;
-  final ValueChanged<MovieItem> onSelectMovie;
   final ValueChanged<MovieItem> onPlayMovie;
   final ValueChanged<String> onToggleWatchlist;
   final VoidCallback onOpenSearch;
@@ -15,7 +13,6 @@ class HomeMoviesPage extends StatefulWidget {
     super.key,
     required this.movies,
     required this.watchlistIds,
-    required this.onSelectMovie,
     required this.onPlayMovie,
     required this.onToggleWatchlist,
     required this.onOpenSearch,
@@ -68,7 +65,6 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
       backgroundColor: const Color(0xFF050C0A).withValues(alpha: 0.35),
       child: Column(
         children: [
-          // Top Brand Header Bar
           Padding(
             padding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
             child: Row(
@@ -137,18 +133,12 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
               ],
             ),
           ),
-
-          // Scrollable Full-Bleed Cinema Content
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(0, 4, 0, 96),
               children: [
-                // Featured Hero Spotlight Banner
                 _buildHeroBanner(heroMovie, featuredList),
-
                 const SizedBox(height: 16),
-
-                // Genre Filter Pills
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
                   padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -187,16 +177,6 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                                   : const Color(0xFF00E676)
                                       .withValues(alpha: 0.2),
                             ),
-                            boxShadow: active
-                                ? [
-                                    BoxShadow(
-                                      color: const Color(0xFF00E676)
-                                          .withValues(alpha: 0.35),
-                                      blurRadius: 12,
-                                      offset: const Offset(0, 2),
-                                    ),
-                                  ]
-                                : null,
                           ),
                           child: Text(
                             genre,
@@ -214,12 +194,11 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                     }).toList(),
                   ),
                 ),
-
                 if (continueWatching.isNotEmpty) ...[
                   const SizedBox(height: 22),
                   _buildSectionHeader(
                     "Continue Watching",
-                    "Resume where you left off",
+                    "Tap any movie to resume instant playback",
                   ),
                   const SizedBox(height: 10),
                   SizedBox(
@@ -229,13 +208,12 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       itemCount: continueWatching.length,
                       itemBuilder: (context, index) {
-                        final movie = continueWatching[index];
-                        return _buildContinueWatchingCard(movie);
+                        return _buildContinueWatchingCard(
+                            continueWatching[index]);
                       },
                     ),
                   ),
                 ],
-
                 const SizedBox(height: 22),
                 _buildSectionHeader(
                   "Trending Now on niooo",
@@ -258,7 +236,6 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                     },
                   ),
                 ),
-
                 const SizedBox(height: 22),
                 _buildSectionHeader(
                   "New 2026 Releases",
@@ -281,7 +258,6 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                     },
                   ),
                 ),
-
                 const SizedBox(height: 22),
                 _buildSectionHeader(
                   "All Featured Movies",
@@ -310,9 +286,9 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: GestureDetector(
-        onTap: () => widget.onSelectMovie(hero),
+        onTap: () => widget.onPlayMovie(hero),
         child: Container(
-          height: 330,
+          height: 320,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(28),
             border: Border.all(
@@ -324,11 +300,6 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                 color: Colors.black.withValues(alpha: 0.75),
                 blurRadius: 28,
                 offset: const Offset(0, 12),
-              ),
-              BoxShadow(
-                color: const Color(0xFF00E676).withValues(alpha: 0.14),
-                blurRadius: 24,
-                offset: const Offset(0, 4),
               ),
             ],
           ),
@@ -409,8 +380,8 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                             Row(
                               children:
                                   List.generate(featuredList.length, (idx) {
-                                final active =
-                                    idx == (_featuredIndex % featuredList.length);
+                                final active = idx ==
+                                    (_featuredIndex % featuredList.length);
                                 return GestureDetector(
                                   onTap: () =>
                                       setState(() => _featuredIndex = idx),
@@ -445,21 +416,11 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        "${hero.releaseYear} · ${hero.duration} · ${hero.genres.join(' • ')}",
+                        "${hero.releaseYear} · ${hero.viewsLabel} · ${hero.genres.join(' • ')}",
                         style: const TextStyle(
                           color: Color(0xFF94A3B8),
                           fontSize: 12.5,
                           fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        hero.tagline,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.78),
-                          fontSize: 13,
                         ),
                       ),
                       const SizedBox(height: 14),
@@ -480,7 +441,7 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                                   ),
                                   SizedBox(width: 6),
                                   Text(
-                                    "Watch Now",
+                                    "Play Movie Now",
                                     style: TextStyle(
                                       color: Color(0xFF03120D),
                                       fontWeight: FontWeight.w900,
@@ -496,22 +457,13 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                             icon: inWatchlist
                                 ? Icons.bookmark_added_rounded
                                 : Icons.bookmark_add_outlined,
-                            tooltip: inWatchlist
-                                ? "Remove from Watchlist"
-                                : "Add to Watchlist",
+                            tooltip: "Watchlist",
                             size: 44,
                             isAccent: inWatchlist,
                             color: inWatchlist
                                 ? const Color(0xFF00E676)
                                 : Colors.white,
                             onTap: () => widget.onToggleWatchlist(hero.id),
-                          ),
-                          const SizedBox(width: 8),
-                          GlassIconButton(
-                            icon: Icons.info_outline_rounded,
-                            tooltip: "Movie Details",
-                            size: 44,
-                            onTap: () => widget.onSelectMovie(hero),
                           ),
                         ],
                       ),
@@ -576,13 +528,6 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
           border: Border.all(
             color: const Color(0xFF00E676).withValues(alpha: 0.25),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.55),
-              blurRadius: 12,
-              offset: const Offset(0, 4),
-            ),
-          ],
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(20),
@@ -682,7 +627,7 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
   Widget _buildPosterCard(MovieItem movie) {
     final saved = widget.watchlistIds.contains(movie.id);
     return GestureDetector(
-      onTap: () => widget.onSelectMovie(movie),
+      onTap: () => widget.onPlayMovie(movie),
       child: Container(
         width: 156,
         margin: const EdgeInsets.only(right: 12),
@@ -699,13 +644,6 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
           border: Border.all(
             color: const Color(0xFF00E676).withValues(alpha: 0.22),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.55),
-              blurRadius: 14,
-              offset: const Offset(0, 6),
-            ),
-          ],
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(22),
@@ -721,11 +659,6 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                       fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => Container(
                         color: const Color(0xFF0A1815),
-                        child: const Icon(
-                          Icons.movie_outlined,
-                          color: Color(0xFF00E676),
-                          size: 36,
-                        ),
                       ),
                     ),
                     Positioned(
@@ -739,9 +672,6 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                         decoration: BoxDecoration(
                           color: Colors.black.withValues(alpha: 0.75),
                           borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: const Color(0xFFFBBF24).withValues(alpha: 0.5),
-                          ),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -775,11 +705,6 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                           decoration: BoxDecoration(
                             color: Colors.black.withValues(alpha: 0.72),
                             shape: BoxShape.circle,
-                            border: Border.all(
-                              color: saved
-                                  ? const Color(0xFF00E676)
-                                  : Colors.white24,
-                            ),
                           ),
                           child: Icon(
                             saved
@@ -835,7 +760,7 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
     final saved = widget.watchlistIds.contains(movie.id);
 
     return GestureDetector(
-      onTap: () => widget.onSelectMovie(movie),
+      onTap: () => widget.onPlayMovie(movie),
       child: Container(
         margin: const EdgeInsets.only(bottom: 10),
         padding: const EdgeInsets.all(10),
@@ -876,26 +801,6 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                 children: [
                   Row(
                     children: [
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color:
-                              const Color(0xFF00E676).withValues(alpha: 0.16),
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          movie.maturityRating,
-                          style: const TextStyle(
-                            color: Color(0xFF00E676),
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
                       const Icon(
                         Icons.star_rounded,
                         color: Color(0xFFFBBF24),
@@ -912,7 +817,7 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                       ),
                       const SizedBox(width: 8),
                       Text(
-                        "${movie.releaseYear} · ${movie.duration}",
+                        "${movie.releaseYear} · ${movie.viewsLabel}",
                         style: const TextStyle(
                           color: Color(0xFF8696A0),
                           fontSize: 11.5,
