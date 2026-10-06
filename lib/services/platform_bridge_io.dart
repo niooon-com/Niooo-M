@@ -2,6 +2,7 @@ import "dart:convert";
 import "dart:io";
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
+import "mini_chrome_browser_service.dart";
 
 class PlatformBridge {
   static bool get isWeb => false;
@@ -94,59 +95,71 @@ class PlatformBridge {
     required String backdropUrl,
     required String title,
   }) {
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        if (backdropUrl.isNotEmpty)
-          Image.network(
-            backdropUrl,
-            fit: BoxFit.cover,
-            errorBuilder: (_, __, ___) =>
-                Container(color: const Color(0xFF050D0A)),
-          ),
-        Container(
-          color: Colors.black.withValues(alpha: 0.55),
-          child: Center(
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Container(
-                  width: 64,
-                  height: 64,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: [Color(0xFF00E676), Color(0xFF10B981)],
+    return Builder(
+      builder: (context) => GestureDetector(
+        onTap: () {
+          MiniChromeBrowserService.openUrl(
+            context,
+            embedSrc,
+            title: title,
+          );
+        },
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            if (backdropUrl.isNotEmpty)
+              Image.network(
+                backdropUrl,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) =>
+                    Container(color: const Color(0xFF050D0A)),
+              ),
+            Container(
+              color: Colors.black.withValues(alpha: 0.55),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 64,
+                      height: 64,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF00E676), Color(0xFF10B981)],
+                        ),
+                      ),
+                      child: const Icon(
+                        Icons.play_arrow_rounded,
+                        color: Color(0xFF03120D),
+                        size: 38,
+                      ),
                     ),
-                  ),
-                  child: const Icon(
-                    Icons.play_arrow_rounded,
-                    color: Color(0xFF03120D),
-                    size: 38,
-                  ),
+                    const SizedBox(height: 10),
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    const Text(
+                      "Tap to open in Mini Chrome Custom Tab",
+                      style: TextStyle(
+                        color: Color(0xFF00E676),
+                        fontSize: 11,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 10),
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  embedSrc,
-                  style: const TextStyle(
-                    color: Color(0xFF00E676),
-                    fontSize: 11,
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
+          ],
         ),
-      ],
+      ),
     );
   }
 }
