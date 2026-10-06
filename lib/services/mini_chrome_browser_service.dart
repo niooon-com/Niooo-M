@@ -4,16 +4,28 @@ import "package:url_launcher/url_launcher.dart" as url_launcher;
 import "platform_bridge.dart";
 
 /// Google Chrome Custom Tabs (Mini Chrome In-App Browser) Service for Niooo M.
-/// Ensures ad links, Streamtape links, and external URLs open inside the
-/// integrated Chrome Custom Tabs mini-browser instead of leaving the app.
+/// ONLY opens external/advertisement links inside the Chrome Custom Tabs
+/// mini-browser positioned right below the 16:9 video player so the video
+/// player is NEVER covered.
 class MiniChromeBrowserService {
   MiniChromeBrowserService._();
 
-  /// Opens any URL inside Google's Chrome Custom Tabs mini-browser on Android
-  /// (with custom Niooo M dark emerald toolbar, slide-up sheet/custom tab,
-  /// share button, and instant close button back to the app), or in a sleek
-  /// in-app modal mini-browser on Web preview.
-  static Future<void> openUrl(
+  /// Calculates the exact height from the bottom of the screen up to the bottom
+  /// edge of the top 16:9 video player so Chrome Custom Tabs never covers the player.
+  static double calculateBelowPlayerHeight(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final screenWidth = media.size.width;
+    final screenHeight = media.size.height;
+    final topPadding = media.padding.top;
+    final videoPlayerHeight = screenWidth * (9.0 / 16.0);
+    final availableBelowPlayer =
+        screenHeight - topPadding - videoPlayerHeight - 4.0;
+    return availableBelowPlayer.clamp(240.0, screenHeight * 0.72);
+  }
+
+  /// Opens an Advertisement / External URL inside Google's Partial Chrome Custom Tab
+  /// strictly below the video player area (never covering the top 16:9 player).
+  static Future<void> openAdUrlBelowPlayer(
     BuildContext context,
     String rawUrl, {
     String? title,
@@ -28,18 +40,20 @@ class MiniChromeBrowserService {
     );
     if (uri == null) return;
 
-    // On Web preview, open an in-app Mini Chrome Custom Tab modal sheet so it
-    // never leaves the app iframe either.
+    final sheetHeight = calculateBelowPlayerHeight(context);
+
     if (PlatformBridge.isWeb) {
-      await _openWebMiniChromeSheet(
+      await _openWebMiniChromeBelowPlayer(
         context,
         uri.toString(),
         title: title ?? uri.host,
+        sheetHeight: sheetHeight,
       );
       return;
     }
 
-    // On Android APK: Launch Google Chrome Custom Tabs (Mini Chrome Browser)
+    // On Android APK: Launch Google Chrome Custom Tabs strictly sized to the area
+    // below the 16:9 video player (fixed height so it never covers the video player).
     try {
       await custom_tabs.launchUrl(
         uri,
@@ -56,11 +70,11 @@ class MiniChromeBrowserService {
             icon: custom_tabs.CustomTabsCloseButtonIcons.back,
           ),
           partial: custom_tabs.PartialCustomTabsConfiguration.adaptiveSheet(
-            initialHeight: MediaQuery.of(context).size.height * 0.88,
-            initialWidth: MediaQuery.of(context).size.width * 0.96,
+            initialHeight: sheetHeight,
+            initialWidth: MediaQuery.of(context).size.width,
             activityHeightResizeBehavior:
-                custom_tabs.CustomTabsActivityHeightResizeBehavior.adjustable,
-            cornerRadius: 20,
+                custom_tabs.CustomTabsActivityHeightResizeBehavior.fixed,
+            cornerRadius: 18,
           ),
           browser: const custom_tabs.CustomTabsBrowserConfiguration(
             prefersDefaultBrowser: false,
@@ -82,7 +96,6 @@ class MiniChromeBrowserService {
         ),
       );
     } catch (_) {
-      // Fallback to url_launcher inAppBrowserView (Chrome Custom Tabs)
       try {
         await url_launcher.launchUrl(
           uri,
@@ -95,10 +108,11 @@ class MiniChromeBrowserService {
     }
   }
 
-  static Future<void> _openWebMiniChromeSheet(
+  static Future<void> _openWebMiniChromeBelowPlayer(
     BuildContext context,
     String url, {
     required String title,
+    required double sheetHeight,
   }) async {
     final viewType =
         "niooo-mini-chrome-${DateTime.now().microsecondsSinceEpoch}";
@@ -107,14 +121,14 @@ class MiniChromeBrowserService {
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
+      barrierColor: Colors.black.withValues(alpha: 0.25),
       backgroundColor: Colors.transparent,
       builder: (ctx) {
-        final height = MediaQuery.of(ctx).size.height * 0.90;
         return Container(
-          height: height,
+          height: sheetHeight,
           decoration: BoxDecoration(
             color: const Color(0xFF061510),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(22)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(18)),
             border: Border.all(
               color: const Color(0xFF00E676).withValues(alpha: 0.45),
               width: 1.2,
@@ -122,14 +136,13 @@ class MiniChromeBrowserService {
           ),
           child: Column(
             children: [
-              // Chrome Custom Tab Top Bar
               Container(
                 padding:
-                    const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 decoration: BoxDecoration(
                   color: const Color(0xFF04100C),
                   borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(22)),
+                      const BorderRadius.vertical(top: Radius.circular(18)),
                   border: Border(
                     bottom: BorderSide(
                       color: Colors.white.withValues(alpha: 0.12),
@@ -143,12 +156,12 @@ class MiniChromeBrowserService {
                       icon: const Icon(
                         Icons.close_rounded,
                         color: Colors.white,
-                        size: 22,
+                        size: 20,
                       ),
-                      tooltip: "Close Mini Browser",
+                      tooltip: "Close Ad Browser",
                     ),
                     Container(
-                      padding: const EdgeInsets.all(6),
+                      padding: const EdgeInsets.all(5),
                       decoration: BoxDecoration(
                         color: const Color(0xFF00E676).withValues(alpha: 0.15),
                         shape: BoxShape.circle,
@@ -156,7 +169,7 @@ class MiniChromeBrowserService {
                       child: const Icon(
                         Icons.lock_rounded,
                         color: Color(0xFF00E676),
-                        size: 14,
+                        size: 13,
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -170,7 +183,7 @@ class MiniChromeBrowserService {
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               color: Colors.white,
-                              fontSize: 13,
+                              fontSize: 12.5,
                               fontWeight: FontWeight.w800,
                             ),
                           ),
@@ -180,7 +193,7 @@ class MiniChromeBrowserService {
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
                               color: Colors.white60,
-                              fontSize: 10.5,
+                              fontSize: 10,
                             ),
                           ),
                         ],
