@@ -42,13 +42,16 @@ class MoviePlayerPage extends StatefulWidget {
 
 class _MoviePlayerPageState extends State<MoviePlayerPage> {
   html.VideoElement? _videoElement;
-  late String _viewType;
+  late String _embedViewType;
+  String? _directVideoViewType;
+
+  bool _useDirectStream = false;
+  bool _isResolvingDirect = false;
   bool _isPlaying = true;
   bool _isMuted = false;
   bool _showControls = true;
   double _currentSeconds = 0.0;
   double _totalSeconds = 100.0;
-  String _selectedQuality = "4K HDR";
   Timer? _hideControlsTimer;
   Timer? _progressPollTimer;
 
@@ -59,7 +62,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
   @override
   void initState() {
     super.initState();
-    _initHtmlVideoPlayer(widget.movie);
+    _initStreamtapePlayer(widget.movie);
   }
 
   @override
@@ -67,31 +70,64 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.movie.id != widget.movie.id) {
       _disposeVideo();
-      _initHtmlVideoPlayer(widget.movie);
+      _initStreamtapePlayer(widget.movie);
     }
   }
 
-  void _initHtmlVideoPlayer(MovieItem movie) {
-    _viewType =
-        "niooo-video-${movie.id}-${DateTime.now().microsecondsSinceEpoch}";
+  void _initStreamtapePlayer(MovieItem movie) {
+    final timestamp = DateTime.now().microsecondsSinceEpoch;
+    _embedViewType = "niooo-st-embed-${movie.id}-$timestamp";
+    _useDirectStream = false;
+    _isResolvingDirect = true;
+
+    final embedSrc = movie.embedUrl.isNotEmpty
+        ? movie.embedUrl
+        : "https://streamtape.com/e/${movie.id}";
+
+    final iframe = html.IFrameElement()
+      ..src = embedSrc
+      ..style.border = "none"
+      ..style.width = "100%"
+      ..style.height = "100%"
+      ..style.backgroundColor = "#000000"
+      ..allowFullscreen = true
+      ..allow =
+          "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen";
+
+    ui_web.platformViewRegistry.registerViewFactory(
+      _embedViewType,
+      (int viewId) => iframe,
+    );
+
+    // Also resolve direct MP4 stream via Streamtape API (/api/streamtape/direct)
+    MovieCatalogData.resolveDirectStreamUrl(movie.id).then((directUrl) {
+      if (!mounted || widget.movie.id != movie.id) return;
+      setState(() => _isResolvingDirect = false);
+      if (directUrl != null && directUrl.startsWith("http")) {
+        _setupDirectHtml5Video(movie, directUrl);
+      }
+    });
+  }
+
+  void _setupDirectHtml5Video(MovieItem movie, String directMp4Url) {
+    final viewType =
+        "niooo-st-direct-${movie.id}-${DateTime.now().microsecondsSinceEpoch}";
 
     final video = html.VideoElement()
-      ..src = movie.videoStreamUrl
+      ..src = directMp4Url
       ..poster = movie.backdropUrl
-      ..autoplay = true
+      ..autoplay = false
       ..controls = false
       ..loop = false
       ..style.width = "100%"
       ..style.height = "100%"
-      ..style.objectFit = "cover"
+      ..style.objectFit = "contain"
       ..style.backgroundColor = "#000000"
       ..setAttribute("playsinline", "true")
       ..setAttribute("webkit-playsinline", "true");
 
-    _videoElement = video;
-
     ui_web.platformViewRegistry.registerViewFactory(
-      _viewType,
+      viewType,
       (int viewId) => video,
     );
 
@@ -103,12 +139,6 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
           _totalSeconds = dur.toDouble();
         });
       }
-      video.play().catchError((_) {
-        // If browser autoplay policy requires muted start, play muted first
-        video.muted = true;
-        if (mounted) setState(() => _isMuted = true);
-        return video.play();
-      });
     });
 
     video.onPlay.listen((_) {
@@ -119,6 +149,24 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
     video.onPause.listen((_) {
       if (!mounted) return;
       setState(() => _isPlaying = false);
+    });
+
+    setState(() {
+      _videoElement = video;
+      _directVideoViewType = viewType;
+    });
+  }
+
+  void _switchToDirectPlayer() {
+    if (_directVideoViewType == null || _videoElement == null) return;
+    setState(() {
+      _useDirectStream = true;
+      _showControls = true;
+    });
+    _videoElement!.play().catchError((_) {
+      _videoElement!.muted = true;
+      if (mounted) setState(() => _isMuted = true);
+      return _videoElement!.play();
     });
 
     _progressPollTimer?.cancel();
@@ -172,8 +220,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
   void _seekRelative(double deltaSeconds) {
     final v = _videoElement;
     if (v == null) return;
-    final target =
-        (_currentSeconds + deltaSeconds).clamp(0.0, _totalSeconds);
+    final target = (_currentSeconds + deltaSeconds).clamp(0.0, _totalSeconds);
     v.currentTime = target;
     setState(() => _currentSeconds = target);
     _scheduleHideControls();
@@ -204,6 +251,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
     _videoElement?.pause();
     _videoElement?.src = "";
     _videoElement = null;
+    _directVideoViewType = null;
   }
 
   @override
@@ -235,7 +283,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
     widget.onShareMovie();
     try {
       html.window.navigator.clipboard?.writeText(
-        "${html.window.location.origin}/?movie=${widget.movie.id}",
+        "https://streamtape.com/v/${widget.movie.id}",
       );
     } catch (_) {}
     setState(() => _showShareBanner = true);
@@ -247,8 +295,21 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
   @override
   Widget build(BuildContext context) {
     final movie = widget.movie;
+
+    // Group same-series episodes if this movie is part of a multi-episode series
+    final sameSeriesEpisodes = movie.episodeNumber > 0
+        ? (widget.allMovies
+            .where((m) =>
+                m.seriesName.toLowerCase() ==
+                    movie.seriesName.toLowerCase() &&
+                m.episodeNumber > 0)
+            .toList()
+          ..sort((a, b) => a.episodeNumber.compareTo(b.episodeNumber)))
+        : <MovieItem>[];
+
     final otherMovies =
         widget.allMovies.where((m) => m.id != movie.id).toList();
+
     final double progressRatio = _totalSeconds > 0
         ? (_currentSeconds / _totalSeconds).clamp(0.0, 1.0)
         : 0.0;
@@ -258,7 +319,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
       child: Column(
         children: [
           // ==============================================================
-          // 1. HEADERLESS EDGE-TO-EDGE VIDEO PLAYER AT VERY TOP OF SCREEN
+          // 1. HEADERLESS EDGE-TO-EDGE STREAMTAPE VIDEO PLAYER AT VERY TOP
           // ==============================================================
           AspectRatio(
             aspectRatio: 16 / 9,
@@ -267,275 +328,268 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  // Real HTML5 Video Stream Canvas
-                  HtmlElementView(viewType: _viewType),
-
-                  // Tap detector layer to toggle controls
-                  GestureDetector(
-                    behavior: HitTestBehavior.opaque,
-                    onTap: _toggleControlsVisibility,
-                    child: AnimatedOpacity(
-                      opacity: _showControls ? 1.0 : 0.0,
-                      duration: const Duration(milliseconds: 220),
-                      child: Container(
-                        decoration: BoxDecoration(
-                          gradient: LinearGradient(
-                            begin: Alignment.topCenter,
-                            end: Alignment.bottomCenter,
-                            colors: [
-                              Colors.black.withValues(alpha: 0.45),
-                              Colors.black.withValues(alpha: 0.15),
-                              Colors.black.withValues(alpha: 0.78),
-                            ],
-                            stops: const [0.0, 0.45, 1.0],
+                  if (!_useDirectStream)
+                    // Official Streamtape Cloud Embed Player
+                    HtmlElementView(viewType: _embedViewType)
+                  else if (_directVideoViewType != null)
+                    // Direct Streamtape MP4 Stream with Custom Glass Controls
+                    Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        HtmlElementView(viewType: _directVideoViewType!),
+                        GestureDetector(
+                          behavior: HitTestBehavior.opaque,
+                          onTap: _toggleControlsVisibility,
+                          child: AnimatedOpacity(
+                            opacity: _showControls ? 1.0 : 0.0,
+                            duration: const Duration(milliseconds: 220),
+                            child: Container(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.black.withValues(alpha: 0.45),
+                                    Colors.black.withValues(alpha: 0.15),
+                                    Colors.black.withValues(alpha: 0.78),
+                                  ],
+                                  stops: const [0.0, 0.45, 1.0],
+                                ),
+                              ),
+                              child: Stack(
+                                children: [
+                                  Center(
+                                    child: Row(
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
+                                      children: [
+                                        _playerCircleControl(
+                                          icon: Icons.replay_10_rounded,
+                                          size: 42,
+                                          onTap: () => _seekRelative(-10),
+                                        ),
+                                        const SizedBox(width: 24),
+                                        GestureDetector(
+                                          onTap: _togglePlayPause,
+                                          child: Container(
+                                            width: 58,
+                                            height: 58,
+                                            decoration: BoxDecoration(
+                                              shape: BoxShape.circle,
+                                              gradient: const LinearGradient(
+                                                colors: [
+                                                  Color(0xFF00E676),
+                                                  Color(0xFF10B981),
+                                                ],
+                                              ),
+                                              border: Border.all(
+                                                color: Colors.white
+                                                    .withValues(alpha: 0.75),
+                                                width: 1.4,
+                                              ),
+                                              boxShadow: [
+                                                BoxShadow(
+                                                  color:
+                                                      const Color(0xFF00E676)
+                                                          .withValues(
+                                                              alpha: 0.55),
+                                                  blurRadius: 20,
+                                                ),
+                                              ],
+                                            ),
+                                            child: Icon(
+                                              _isPlaying
+                                                  ? Icons.pause_rounded
+                                                  : Icons.play_arrow_rounded,
+                                              color: const Color(0xFF03120D),
+                                              size: 34,
+                                            ),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 24),
+                                        _playerCircleControl(
+                                          icon: Icons.forward_10_rounded,
+                                          size: 42,
+                                          onTap: () => _seekRelative(10),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Positioned(
+                                    left: 12,
+                                    right: 12,
+                                    bottom: 6,
+                                    child: Row(
+                                      children: [
+                                        Text(
+                                          _formatTime(_currentSeconds),
+                                          style: const TextStyle(
+                                            color: Colors.white,
+                                            fontSize: 11,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                        Expanded(
+                                          child: SliderTheme(
+                                            data: SliderTheme.of(context)
+                                                .copyWith(
+                                              trackHeight: 3.0,
+                                              thumbShape:
+                                                  const RoundSliderThumbShape(
+                                                enabledThumbRadius: 6.0,
+                                              ),
+                                              overlayShape:
+                                                  const RoundSliderOverlayShape(
+                                                overlayRadius: 12.0,
+                                              ),
+                                            ),
+                                            child: Slider(
+                                              value: progressRatio,
+                                              activeColor:
+                                                  const Color(0xFF00E676),
+                                              inactiveColor: Colors.white30,
+                                              onChanged: (v) {
+                                                final target =
+                                                    v * _totalSeconds;
+                                                _videoElement?.currentTime =
+                                                    target;
+                                                setState(() =>
+                                                    _currentSeconds = target);
+                                                _scheduleHideControls();
+                                              },
+                                            ),
+                                          ),
+                                        ),
+                                        Text(
+                                          _formatTime(_totalSeconds),
+                                          style: const TextStyle(
+                                            color: Colors.white70,
+                                            fontSize: 11,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 8),
+                                        GestureDetector(
+                                          onTap: _toggleMute,
+                                          child: Icon(
+                                            _isMuted
+                                                ? Icons.volume_off_rounded
+                                                : Icons.volume_up_rounded,
+                                            color: Colors.white,
+                                            size: 20,
+                                          ),
+                                        ),
+                                        const SizedBox(width: 10),
+                                        GestureDetector(
+                                          onTap: _requestFullscreen,
+                                          child: const Icon(
+                                            Icons.fullscreen_rounded,
+                                            color: Colors.white,
+                                            size: 22,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
                           ),
                         ),
-                        child: Stack(
-                          children: [
-                            // Subtle floating minimize button (no header bar!)
-                            Positioned(
-                              top: 10,
-                              left: 12,
-                              child: GestureDetector(
-                                onTap: widget.onBack,
-                                child: ClipOval(
-                                  child: BackdropFilter(
-                                    filter: ui.ImageFilter.blur(
-                                        sigmaX: 12, sigmaY: 12),
-                                    child: Container(
-                                      width: 36,
-                                      height: 36,
-                                      decoration: BoxDecoration(
-                                        color: Colors.black
-                                            .withValues(alpha: 0.52),
-                                        shape: BoxShape.circle,
-                                        border: Border.all(
-                                          color: Colors.white
-                                              .withValues(alpha: 0.2),
-                                        ),
-                                      ),
-                                      child: const Icon(
-                                        Icons.keyboard_arrow_down_rounded,
-                                        color: Colors.white,
-                                        size: 24,
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ),
+                      ],
+                    ),
 
-                            // Subtle floating quality pill on top-right
-                            Positioned(
-                              top: 10,
-                              right: 12,
-                              child: GestureDetector(
-                                onTap: () {
-                                  setState(() {
-                                    _selectedQuality =
-                                        _selectedQuality == "4K HDR"
-                                            ? "1080p HD"
-                                            : "4K HDR";
-                                  });
-                                },
-                                child: ClipRRect(
-                                  borderRadius: BorderRadius.circular(14),
-                                  child: BackdropFilter(
-                                    filter: ui.ImageFilter.blur(
-                                        sigmaX: 12, sigmaY: 12),
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(
-                                        horizontal: 10,
-                                        vertical: 5,
-                                      ),
-                                      decoration: BoxDecoration(
-                                        color: Colors.black
-                                            .withValues(alpha: 0.55),
-                                        borderRadius: BorderRadius.circular(14),
-                                        border: Border.all(
-                                          color: const Color(0xFF00E676)
-                                              .withValues(alpha: 0.45),
-                                        ),
-                                      ),
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          const Icon(
-                                            Icons.hd_rounded,
-                                            color: Color(0xFF00E676),
-                                            size: 15,
-                                          ),
-                                          const SizedBox(width: 4),
-                                          Text(
-                                            _selectedQuality,
-                                            style: const TextStyle(
-                                              color: Color(0xFF00E676),
-                                              fontSize: 11,
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                ),
+                  // Subtle floating minimize button on top-left (no header bar!)
+                  Positioned(
+                    top: 10,
+                    left: 12,
+                    child: GestureDetector(
+                      onTap: widget.onBack,
+                      child: ClipOval(
+                        child: BackdropFilter(
+                          filter:
+                              ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                          child: Container(
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.62),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Colors.white.withValues(alpha: 0.25),
                               ),
                             ),
-
-                            // Center Play/Pause & 10s Skip Controls
-                            Center(
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  _playerCircleControl(
-                                    icon: Icons.replay_10_rounded,
-                                    size: 42,
-                                    onTap: () => _seekRelative(-10),
-                                  ),
-                                  const SizedBox(width: 24),
-                                  GestureDetector(
-                                    onTap: _togglePlayPause,
-                                    child: Container(
-                                      width: 58,
-                                      height: 58,
-                                      decoration: BoxDecoration(
-                                        shape: BoxShape.circle,
-                                        gradient: const LinearGradient(
-                                          colors: [
-                                            Color(0xFF00E676),
-                                            Color(0xFF10B981),
-                                          ],
-                                        ),
-                                        border: Border.all(
-                                          color: Colors.white
-                                              .withValues(alpha: 0.75),
-                                          width: 1.4,
-                                        ),
-                                        boxShadow: [
-                                          BoxShadow(
-                                            color: const Color(0xFF00E676)
-                                                .withValues(alpha: 0.55),
-                                            blurRadius: 20,
-                                          ),
-                                        ],
-                                      ),
-                                      child: Icon(
-                                        _isPlaying
-                                            ? Icons.pause_rounded
-                                            : Icons.play_arrow_rounded,
-                                        color: const Color(0xFF03120D),
-                                        size: 34,
-                                      ),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 24),
-                                  _playerCircleControl(
-                                    icon: Icons.forward_10_rounded,
-                                    size: 42,
-                                    onTap: () => _seekRelative(10),
-                                  ),
-                                ],
-                              ),
+                            child: const Icon(
+                              Icons.keyboard_arrow_down_rounded,
+                              color: Colors.white,
+                              size: 24,
                             ),
-
-                            // Bottom Scrubber & Audio/Fullscreen Controls
-                            Positioned(
-                              left: 12,
-                              right: 12,
-                              bottom: 6,
-                              child: Column(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Row(
-                                    children: [
-                                      Text(
-                                        _formatTime(_currentSeconds),
-                                        style: const TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 11,
-                                          fontWeight: FontWeight.bold,
-                                        ),
-                                      ),
-                                      Expanded(
-                                        child: SliderTheme(
-                                          data: SliderTheme.of(context)
-                                              .copyWith(
-                                            trackHeight: 3.0,
-                                            thumbShape:
-                                                const RoundSliderThumbShape(
-                                              enabledThumbRadius: 6.0,
-                                            ),
-                                            overlayShape:
-                                                const RoundSliderOverlayShape(
-                                              overlayRadius: 12.0,
-                                            ),
-                                          ),
-                                          child: Slider(
-                                            value: progressRatio,
-                                            activeColor:
-                                                const Color(0xFF00E676),
-                                            inactiveColor: Colors.white30,
-                                            onChanged: (v) {
-                                              final target =
-                                                  v * _totalSeconds;
-                                              _videoElement?.currentTime =
-                                                  target;
-                                              setState(() =>
-                                                  _currentSeconds = target);
-                                              _scheduleHideControls();
-                                            },
-                                          ),
-                                        ),
-                                      ),
-                                      Text(
-                                        _formatTime(_totalSeconds),
-                                        style: const TextStyle(
-                                          color: Colors.white70,
-                                          fontSize: 11,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      GestureDetector(
-                                        onTap: _toggleMute,
-                                        child: Icon(
-                                          _isMuted
-                                              ? Icons.volume_off_rounded
-                                              : Icons.volume_up_rounded,
-                                          color: Colors.white,
-                                          size: 20,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 10),
-                                      GestureDetector(
-                                        onTap: _requestFullscreen,
-                                        child: const Icon(
-                                          Icons.fullscreen_rounded,
-                                          color: Colors.white,
-                                          size: 22,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
                       ),
                     ),
                   ),
 
-                  // Thin glowing emerald progress line along the bottom edge of the video player
+                  // Streamtape Direct / Cloud Mode Toggle Pill on Top-Right
                   Positioned(
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    child: LinearProgressIndicator(
-                      value: progressRatio,
-                      minHeight: 2.5,
-                      backgroundColor: Colors.white12,
-                      valueColor: const AlwaysStoppedAnimation<Color>(
-                        Color(0xFF00E676),
+                    top: 10,
+                    right: 12,
+                    child: GestureDetector(
+                      onTap: () {
+                        if (!_useDirectStream &&
+                            _directVideoViewType != null) {
+                          _switchToDirectPlayer();
+                        } else if (_useDirectStream) {
+                          _videoElement?.pause();
+                          setState(() => _useDirectStream = false);
+                        }
+                      },
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(14),
+                        child: BackdropFilter(
+                          filter:
+                              ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 10,
+                              vertical: 5,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.black.withValues(alpha: 0.65),
+                              borderRadius: BorderRadius.circular(14),
+                              border: Border.all(
+                                color: const Color(0xFF00E676)
+                                    .withValues(alpha: 0.5),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  _useDirectStream
+                                      ? Icons.bolt_rounded
+                                      : Icons.cloud_done_rounded,
+                                  color: const Color(0xFF00E676),
+                                  size: 14,
+                                ),
+                                const SizedBox(width: 4),
+                                Text(
+                                  _useDirectStream
+                                      ? "Direct MP4"
+                                      : (_directVideoViewType != null
+                                          ? "Streamtape HD · Switch Direct"
+                                          : (_isResolvingDirect
+                                              ? "Streamtape Cloud"
+                                              : "Streamtape HD")),
+                                  style: const TextStyle(
+                                    color: Color(0xFF00E676),
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w800,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -545,18 +599,18 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
           ),
 
           // ==============================================================
-          // 2. BELOW VIDEO PLAYER: TITLE, LIKE / COMMENT / SHARE BAR & OTHER MOVIES
+          // 2. BELOW VIDEO PLAYER: TITLE, LIKE / COMMENT / SHARE BAR, EPISODES & OTHER MOVIES
           // ==============================================================
           Expanded(
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 14, 16, 36),
               children: [
-                // Movie Title + Views & Rating Metadata
+                // Movie Title + Views & Streamtape Metadata
                 Text(
                   movie.title,
                   style: const TextStyle(
                     color: Color(0xFFF0FDF4),
-                    fontSize: 21,
+                    fontSize: 20.5,
                     fontWeight: FontWeight.w900,
                     letterSpacing: -0.4,
                   ),
@@ -568,7 +622,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                   crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     Text(
-                      "${movie.viewsLabel} · ${movie.releaseYear} · ${movie.genres.join(' • ')}",
+                      "${movie.viewsLabel} · ${movie.releaseYear} · ${movie.duration} · ${movie.genres.join(' • ')}",
                       style: const TextStyle(
                         color: Color(0xFF94A3B8),
                         fontSize: 12.5,
@@ -680,13 +734,113 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                         SizedBox(width: 8),
                         Expanded(
                           child: Text(
-                            "Movie stream link copied! Ready to share with friends.",
+                            "Streamtape movie link copied to clipboard!",
                             style: TextStyle(
                               color: Color(0xFFF0FDF4),
                               fontSize: 12.5,
                               fontWeight: FontWeight.w600,
                             ),
                           ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+
+                // ==========================================================
+                // SERIES EPISODES SELECTOR (IF WATCHING A SERIES LIKE OUR STICKY LOVE / OPERATION SAFED SAGAR)
+                // ==========================================================
+                if (sameSeriesEpisodes.length > 1) ...[
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          const Color(0xFF00E676).withValues(alpha: 0.10),
+                          const Color(0xFF071512).withValues(alpha: 0.85),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(18),
+                      border: Border.all(
+                        color: const Color(0xFF00E676).withValues(alpha: 0.28),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            const Icon(
+                              Icons.video_library_rounded,
+                              color: Color(0xFF00E676),
+                              size: 17,
+                            ),
+                            const SizedBox(width: 7),
+                            Expanded(
+                              child: Text(
+                                "${movie.seriesName} — All Episodes (${sameSeriesEpisodes.length})",
+                                style: const TextStyle(
+                                  color: Color(0xFFF0FDF4),
+                                  fontWeight: FontWeight.w800,
+                                  fontSize: 13.5,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 10),
+                        Wrap(
+                          spacing: 8,
+                          runSpacing: 8,
+                          children: sameSeriesEpisodes.map((ep) {
+                            final isCurrent = ep.id == movie.id;
+                            return GestureDetector(
+                              onTap: () {
+                                if (!isCurrent) {
+                                  widget.onSelectOtherMovie(ep);
+                                }
+                              },
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 13,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  gradient: isCurrent
+                                      ? const LinearGradient(
+                                          colors: [
+                                            Color(0xFF00E676),
+                                            Color(0xFF10B981),
+                                          ],
+                                        )
+                                      : null,
+                                  color: isCurrent
+                                      ? null
+                                      : Colors.white.withValues(alpha: 0.06),
+                                  borderRadius: BorderRadius.circular(14),
+                                  border: Border.all(
+                                    color: isCurrent
+                                        ? Colors.white70
+                                        : const Color(0xFF00E676)
+                                            .withValues(alpha: 0.25),
+                                  ),
+                                ),
+                                child: Text(
+                                  "EP ${ep.episodeNumber.toString().padLeft(2, '0')}",
+                                  style: TextStyle(
+                                    color: isCurrent
+                                        ? const Color(0xFF03120D)
+                                        : const Color(0xFFF0FDF4),
+                                    fontWeight: FontWeight.w800,
+                                    fontSize: 12,
+                                  ),
+                                ),
+                              ),
+                            );
+                          }).toList(),
                         ),
                       ],
                     ),
@@ -763,7 +917,6 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                           ),
                         ] else ...[
                           const SizedBox(height: 12),
-                          // Add Comment Input Row
                           Row(
                             children: [
                               Expanded(
@@ -896,7 +1049,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
 
                 const SizedBox(height: 14),
 
-                // Movie Synopsis & Cast Summary Card
+                // Movie Synopsis & Streamtape Info Card
                 Container(
                   padding: const EdgeInsets.all(14),
                   decoration: BoxDecoration(
@@ -919,10 +1072,10 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        "Director: ${movie.director}",
+                        "Streamtape ID: ${movie.id} · Size: ${movie.duration} · Director: ${movie.director}",
                         style: const TextStyle(
                           color: Color(0xFF00E676),
-                          fontSize: 12,
+                          fontSize: 11.5,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
@@ -933,23 +1086,25 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                 const SizedBox(height: 22),
 
                 // ==========================================================
-                // 3. OTHER MOVIES / UP NEXT FEED BELOW THE PLAYER
+                // 3. OTHER STREAM-READY MOVIES FROM STREAMTAPE ACCOUNT
                 // ==========================================================
                 Row(
-                  children: const [
-                    Icon(
+                  children: [
+                    const Icon(
                       Icons.auto_awesome_motion_rounded,
                       color: Color(0xFF00E676),
                       size: 19,
                     ),
-                    SizedBox(width: 8),
-                    Text(
-                      "More Movies to Watch Next",
-                      style: TextStyle(
-                        color: Color(0xFFF0FDF4),
-                        fontSize: 17,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.3,
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        "More Movies from Streamtape (${otherMovies.length})",
+                        style: const TextStyle(
+                          color: Color(0xFFF0FDF4),
+                          fontSize: 17,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: -0.3,
+                        ),
                       ),
                     ),
                   ],
@@ -1005,21 +1160,21 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
         padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 9.5),
         decoration: BoxDecoration(
           gradient: isActive
-              ? const LinearGradient(
-                  colors: [
-                    Color(0xFF00E676),
-                    Color(0xFF10B981),
-                    Color(0xFF047857),
-                  ],
-                  begin: Alignment.topLeft,
-                  end: Alignment.bottomRight,
-                )
-              : LinearGradient(
-                  colors: [
-                    Colors.white.withValues(alpha: 0.08),
-                    const Color(0xFF091714).withValues(alpha: 0.82),
-                  ],
-                ),
+          ? const LinearGradient(
+              colors: [
+                Color(0xFF00E676),
+                Color(0xFF10B981),
+                Color(0xFF047857),
+              ],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            )
+          : LinearGradient(
+              colors: [
+                Colors.white.withValues(alpha: 0.08),
+                const Color(0xFF091714).withValues(alpha: 0.82),
+              ],
+            ),
           borderRadius: BorderRadius.circular(24),
           border: Border.all(
             color: isActive
@@ -1085,7 +1240,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
         ),
         child: Row(
           children: [
-            // 16:9 Thumbnail with Duration Badge & Play Icon
+            // 16:9 Streamtape Thumbnail with Size Badge & Play Icon
             ClipRRect(
               borderRadius: BorderRadius.circular(14),
               child: SizedBox(
@@ -1097,8 +1252,12 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                     Image.network(
                       item.backdropUrl,
                       fit: BoxFit.cover,
-                      errorBuilder: (_, __, ___) => Container(
-                        color: const Color(0xFF0A1815),
+                      errorBuilder: (_, __, ___) => Image.network(
+                        item.posterUrl,
+                        fit: BoxFit.cover,
+                        errorBuilder: (_, __, ___) => Container(
+                          color: const Color(0xFF0A1815),
+                        ),
                       ),
                     ),
                     Container(
@@ -1157,13 +1316,13 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: Color(0xFFF0FDF4),
-                      fontSize: 15,
+                      fontSize: 14.5,
                       fontWeight: FontWeight.w800,
                     ),
                   ),
                   const SizedBox(height: 3),
                   Text(
-                    "${item.genres.join(' • ')} · ${item.releaseYear}",
+                    "${item.qualityBadge} · ${item.genres.join(' • ')}",
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
