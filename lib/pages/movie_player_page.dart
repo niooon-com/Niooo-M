@@ -513,7 +513,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                             _directVideoViewType != null) {
                           _switchToDirectPlayer();
                         } else if (_useDirectStream) {
-                          _videoElement?.pause();
+                          PlatformBridge.pauseVideo(_videoElement);
                           setState(() => _useDirectStream = false);
                         }
                       },
