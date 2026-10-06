@@ -4,13 +4,13 @@ import "package:flutter/material.dart";
 class FluidGlassBottomBar extends StatefulWidget {
   final int selectedIndex;
   final ValueChanged<int> onTabSelected;
-  final int watchlistCount;
+  final int unreadChatsCount;
 
   const FluidGlassBottomBar({
     super.key,
     required this.selectedIndex,
     required this.onTabSelected,
-    this.watchlistCount = 0,
+    this.unreadChatsCount = 0,
   });
 
   @override
@@ -44,7 +44,7 @@ class _FluidGlassBottomBarState extends State<FluidGlassBottomBar>
           label: "Watchlist",
           outlineIcon: Icons.bookmark_border_rounded,
           filledIcon: Icons.bookmark_rounded,
-          badgeCount: widget.watchlistCount,
+          badgeCount: widget.unreadChatsCount,
         ),
         const _NavItemData(
           index: 3,
@@ -102,15 +102,13 @@ class _FluidGlassBottomBarState extends State<FluidGlassBottomBar>
     _animController.stop();
     setState(() {
       _isDragging = true;
-      _currentPosition =
-          (details.localPosition.dx / tabWidth - 0.5).clamp(0.0, 3.0);
+      _currentPosition = (details.localPosition.dx / tabWidth - 0.5).clamp(0.0, 3.0);
     });
   }
 
   void _handleDragUpdate(DragUpdateDetails details, double tabWidth) {
     setState(() {
-      _currentPosition =
-          (details.localPosition.dx / tabWidth - 0.5).clamp(0.0, 3.0);
+      _currentPosition = (details.localPosition.dx / tabWidth - 0.5).clamp(0.0, 3.0);
     });
   }
 
@@ -135,18 +133,21 @@ class _FluidGlassBottomBarState extends State<FluidGlassBottomBar>
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(38),
             boxShadow: [
+              // Pitch-black levitation drop shadow
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.85),
                 blurRadius: 34,
                 spreadRadius: 2,
                 offset: const Offset(0, 14),
               ),
+              // Ambient neon emerald under-glow
               BoxShadow(
                 color: const Color(0xFF00E676).withValues(alpha: 0.22),
                 blurRadius: 28,
                 spreadRadius: -2,
                 offset: const Offset(0, 4),
               ),
+              // Specular top edge highlight
               BoxShadow(
                 color: Colors.white.withValues(alpha: 0.14),
                 blurRadius: 4,
@@ -181,8 +182,8 @@ class _FluidGlassBottomBarState extends State<FluidGlassBottomBar>
                   builder: (context, constraints) {
                     final double totalWidth = constraints.maxWidth;
                     final double tabWidth = totalWidth / 4;
-                    final double pillLeft = (_currentPosition * tabWidth)
-                        .clamp(0.0, totalWidth - tabWidth);
+                    final double pillLeft =
+                        (_currentPosition * tabWidth).clamp(0.0, totalWidth - tabWidth);
 
                     return GestureDetector(
                       behavior: HitTestBehavior.opaque,
@@ -196,37 +197,36 @@ class _FluidGlassBottomBarState extends State<FluidGlassBottomBar>
                         height: 56,
                         child: Stack(
                           children: [
+                            // 3D Liquid Glass Sliding Active Pill Capsule
                             Positioned(
                               left: pillLeft,
                               top: 2,
                               bottom: 2,
                               width: tabWidth,
                               child: Container(
-                                margin:
-                                    const EdgeInsets.symmetric(horizontal: 3),
+                                margin: const EdgeInsets.symmetric(horizontal: 3),
                                 decoration: BoxDecoration(
                                   gradient: LinearGradient(
                                     colors: [
-                                      const Color(0xFF00E676).withValues(
-                                          alpha: _isDragging ? 0.96 : 0.88),
-                                      const Color(0xFF10B981).withValues(
-                                          alpha: _isDragging ? 0.94 : 0.84),
-                                      const Color(0xFF047857).withValues(
-                                          alpha: _isDragging ? 0.96 : 0.90),
+                                      const Color(0xFF00E676)
+                                          .withValues(alpha: _isDragging ? 0.96 : 0.88),
+                                      const Color(0xFF10B981)
+                                          .withValues(alpha: _isDragging ? 0.94 : 0.84),
+                                      const Color(0xFF047857)
+                                          .withValues(alpha: _isDragging ? 0.96 : 0.90),
                                     ],
                                     begin: Alignment.topLeft,
                                     end: Alignment.bottomRight,
                                   ),
                                   borderRadius: BorderRadius.circular(30),
                                   border: Border.all(
-                                    color: Colors.white.withValues(
-                                        alpha: _isDragging ? 0.75 : 0.55),
+                                    color: Colors.white
+                                        .withValues(alpha: _isDragging ? 0.75 : 0.55),
                                     width: 1.2,
                                   ),
                                   boxShadow: [
                                     BoxShadow(
-                                      color:
-                                          Colors.black.withValues(alpha: 0.55),
+                                      color: Colors.black.withValues(alpha: 0.55),
                                       blurRadius: 12,
                                       offset: const Offset(0, 5),
                                     ),
@@ -238,8 +238,7 @@ class _FluidGlassBottomBarState extends State<FluidGlassBottomBar>
                                       offset: const Offset(0, 2),
                                     ),
                                     BoxShadow(
-                                      color:
-                                          Colors.white.withValues(alpha: 0.35),
+                                      color: Colors.white.withValues(alpha: 0.35),
                                       blurRadius: 3,
                                       offset: const Offset(0, -1),
                                     ),
@@ -284,8 +283,7 @@ class _FluidGlassBottomBarState extends State<FluidGlassBottomBar>
                                     child: Center(
                                       child: Column(
                                         mainAxisSize: MainAxisSize.min,
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.center,
+                                        mainAxisAlignment: MainAxisAlignment.center,
                                         children: [
                                           Stack(
                                             clipBehavior: Clip.none,
@@ -310,36 +308,37 @@ class _FluidGlassBottomBarState extends State<FluidGlassBottomBar>
                                                   top: -5,
                                                   right: -10,
                                                   child: Container(
-                                                    padding: const EdgeInsets
-                                                        .symmetric(
+                                                    padding: const EdgeInsets.symmetric(
                                                       horizontal: 5.5,
                                                       vertical: 1.5,
                                                     ),
                                                     decoration: BoxDecoration(
-                                                      gradient:
-                                                          const LinearGradient(
+                                                      gradient: const LinearGradient(
                                                         colors: [
                                                           Color(0xFF00E676),
                                                           Color(0xFF10B981),
                                                         ],
                                                       ),
                                                       borderRadius:
-                                                          BorderRadius.circular(
-                                                              12),
+                                                          BorderRadius.circular(12),
                                                       border: Border.all(
-                                                        color: const Color(
-                                                            0xFF030706),
+                                                        color: const Color(0xFF030706),
                                                         width: 1.5,
                                                       ),
+                                                      boxShadow: [
+                                                        BoxShadow(
+                                                          color: const Color(0xFF00E676)
+                                                              .withValues(alpha: 0.65),
+                                                          blurRadius: 8,
+                                                        ),
+                                                      ],
                                                     ),
                                                     child: Text(
                                                       "${item.badgeCount}",
                                                       style: const TextStyle(
-                                                        color:
-                                                            Color(0xFF030706),
+                                                        color: Color(0xFF030706),
                                                         fontSize: 9.5,
-                                                        fontWeight:
-                                                            FontWeight.w900,
+                                                        fontWeight: FontWeight.w900,
                                                       ),
                                                     ),
                                                   ),
