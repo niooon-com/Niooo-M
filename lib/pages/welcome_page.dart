@@ -53,22 +53,15 @@ class _WelcomePageState extends State<WelcomePage>
             child: Column(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                // Top Subtle Cinema Quality Line
                 Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Container(
                       width: 7,
                       height: 7,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFF00E676),
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF00E676),
                         shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: const Color(0xFF00E676).withValues(alpha: 0.7),
-                            blurRadius: 8,
-                          ),
-                        ],
                       ),
                     ),
                     const SizedBox(width: 8),
@@ -78,13 +71,10 @@ class _WelcomePageState extends State<WelcomePage>
                         color: Colors.white.withValues(alpha: 0.68),
                         fontSize: 12,
                         fontWeight: FontWeight.w500,
-                        letterSpacing: 0.2,
                       ),
                     ),
                   ],
                 ),
-
-                // Center Hero Section: Floating 3D Liquid Glass Cinema Emblem + "Welcome niooo"
                 AnimatedBuilder(
                   animation: _pulseController,
                   builder: (context, _) {
@@ -105,70 +95,44 @@ class _WelcomePageState extends State<WelcomePage>
                                     shape: BoxShape.circle,
                                     gradient: RadialGradient(
                                       colors: [
-                                        const Color(0xFF00E676).withValues(alpha: 0.28),
-                                        const Color(0xFF10B981).withValues(alpha: 0.08),
+                                        const Color(0xFF00E676)
+                                            .withValues(alpha: 0.28),
+                                        const Color(0xFF10B981)
+                                            .withValues(alpha: 0.08),
                                         Colors.transparent,
                                       ],
-                                      stops: const [0.0, 0.55, 1.0],
                                     ),
                                   ),
                                 ),
                               ),
                               ClipOval(
                                 child: BackdropFilter(
-                                  filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+                                  filter:
+                                      ImageFilter.blur(sigmaX: 18, sigmaY: 18),
                                   child: Container(
                                     width: 114,
                                     height: 114,
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
-                                      gradient: LinearGradient(
-                                        begin: Alignment.topLeft,
-                                        end: Alignment.bottomRight,
-                                        colors: [
-                                          Colors.white.withValues(alpha: 0.16),
-                                          const Color(0xFF00E676).withValues(alpha: 0.12),
-                                          const Color(0xFF041410).withValues(alpha: 0.75),
-                                        ],
-                                      ),
                                       border: Border.all(
-                                        color: const Color(0xFF00E676).withValues(alpha: 0.45),
+                                        color: const Color(0xFF00E676)
+                                            .withValues(alpha: 0.45),
                                         width: 1.2,
                                       ),
-                                      boxShadow: [
-                                        BoxShadow(
-                                          color: Colors.black.withValues(alpha: 0.6),
-                                          blurRadius: 24,
-                                          offset: const Offset(0, 10),
-                                        ),
-                                      ],
                                     ),
                                     child: Center(
                                       child: Container(
                                         width: 76,
                                         height: 76,
-                                        decoration: BoxDecoration(
+                                        decoration: const BoxDecoration(
                                           shape: BoxShape.circle,
-                                          gradient: const LinearGradient(
-                                            begin: Alignment.topLeft,
-                                            end: Alignment.bottomRight,
+                                          gradient: LinearGradient(
                                             colors: [
                                               Color(0xFF00E676),
                                               Color(0xFF10B981),
                                               Color(0xFF047857),
                                             ],
                                           ),
-                                          border: Border.all(
-                                            color: Colors.white.withValues(alpha: 0.6),
-                                            width: 1.2,
-                                          ),
-                                          boxShadow: [
-                                            BoxShadow(
-                                              color: const Color(0xFF00E676).withValues(alpha: 0.5),
-                                              blurRadius: 20,
-                                              offset: const Offset(0, 4),
-                                            ),
-                                          ],
                                         ),
                                         child: const Icon(
                                           Icons.movie_filter_rounded,
@@ -184,26 +148,14 @@ class _WelcomePageState extends State<WelcomePage>
                           ),
                         ),
                         const SizedBox(height: 30),
-                        ShaderMask(
-                          shaderCallback: (bounds) => const LinearGradient(
-                            begin: Alignment.topLeft,
-                            end: Alignment.bottomRight,
-                            colors: [
-                              Color(0xFFFFFFFF),
-                              Color(0xFFD1FAE5),
-                              Color(0xFF00E676),
-                            ],
-                          ).createShader(bounds),
-                          child: const Text(
-                            "Welcome niooo",
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 36,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: -0.9,
-                              height: 1.15,
-                            ),
+                        const Text(
+                          "Welcome niooo",
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 36,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: -0.9,
                           ),
                         ),
                         const SizedBox(height: 14),
@@ -216,7 +168,6 @@ class _WelcomePageState extends State<WelcomePage>
                               color: Colors.white.withValues(alpha: 0.68),
                               fontSize: 14,
                               height: 1.5,
-                              fontWeight: FontWeight.w400,
                             ),
                           ),
                         ),
@@ -224,8 +175,6 @@ class _WelcomePageState extends State<WelcomePage>
                     );
                   },
                 ),
-
-                // Bottom CTA Section: 3D Tactile Liquid Glass "Get Started" Button
                 Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -240,29 +189,20 @@ class _WelcomePageState extends State<WelcomePage>
                         ),
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            const Text(
+                          children: const [
+                            Text(
                               "Get Started",
                               style: TextStyle(
                                 color: Color(0xFF03120D),
                                 fontSize: 16,
                                 fontWeight: FontWeight.w900,
-                                letterSpacing: 0.2,
                               ),
                             ),
-                            const SizedBox(width: 10),
-                            Container(
-                              width: 28,
-                              height: 28,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF03120D).withValues(alpha: 0.16),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.play_arrow_rounded,
-                                color: Color(0xFF03120D),
-                                size: 20,
-                              ),
+                            SizedBox(width: 10),
+                            Icon(
+                              Icons.play_arrow_rounded,
+                              color: Color(0xFF03120D),
+                              size: 22,
                             ),
                           ],
                         ),
@@ -275,7 +215,6 @@ class _WelcomePageState extends State<WelcomePage>
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.44),
                         fontSize: 11.5,
-                        fontWeight: FontWeight.w500,
                       ),
                     ),
                   ],
