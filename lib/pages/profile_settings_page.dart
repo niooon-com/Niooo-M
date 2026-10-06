@@ -4,6 +4,8 @@ import "../models/movie_models.dart";
 import "../services/auth_bridge_service.dart";
 import "../widgets/glass_container.dart";
 
+export "../services/auth_bridge_service.dart";
+
 // =============================================================================
 // PROFILE & OPTIONAL LOGIN SCREEN + FULL-SCREEN ADMIN PANEL LAUNCHER
 // =============================================================================
