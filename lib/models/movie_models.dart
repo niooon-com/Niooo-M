@@ -176,6 +176,25 @@ class MovieItem {
   }
 
   MovieItem copyWith({
+    String? title,
+    String? seriesName,
+    String? episodeLabel,
+    int? episodeNumber,
+    String? tagline,
+    String? synopsis,
+    String? posterUrl,
+    String? backdropUrl,
+    String? embedUrl,
+    String? videoStreamUrl,
+    double? rating,
+    int? releaseYear,
+    String? duration,
+    String? qualityBadge,
+    List<String>? genres,
+    String? director,
+    bool? isFeatured,
+    bool? isTrending,
+    bool? isNewRelease,
     double? watchProgress,
     int? likesCount,
     int? sharesCount,
@@ -183,27 +202,27 @@ class MovieItem {
   }) {
     return MovieItem(
       id: id,
-      title: title,
-      seriesName: seriesName,
-      episodeLabel: episodeLabel,
-      episodeNumber: episodeNumber,
-      tagline: tagline,
-      synopsis: synopsis,
-      posterUrl: posterUrl,
-      backdropUrl: backdropUrl,
-      embedUrl: embedUrl,
-      videoStreamUrl: videoStreamUrl,
-      rating: rating,
-      releaseYear: releaseYear,
-      duration: duration,
+      title: title ?? this.title,
+      seriesName: seriesName ?? this.seriesName,
+      episodeLabel: episodeLabel ?? this.episodeLabel,
+      episodeNumber: episodeNumber ?? this.episodeNumber,
+      tagline: tagline ?? this.tagline,
+      synopsis: synopsis ?? this.synopsis,
+      posterUrl: posterUrl ?? this.posterUrl,
+      backdropUrl: backdropUrl ?? this.backdropUrl,
+      embedUrl: embedUrl ?? this.embedUrl,
+      videoStreamUrl: videoStreamUrl ?? this.videoStreamUrl,
+      rating: rating ?? this.rating,
+      releaseYear: releaseYear ?? this.releaseYear,
+      duration: duration ?? this.duration,
       maturityRating: maturityRating,
-      qualityBadge: qualityBadge,
-      genres: genres,
-      director: director,
+      qualityBadge: qualityBadge ?? this.qualityBadge,
+      genres: genres ?? this.genres,
+      director: director ?? this.director,
       cast: cast,
-      isFeatured: isFeatured,
-      isTrending: isTrending,
-      isNewRelease: isNewRelease,
+      isFeatured: isFeatured ?? this.isFeatured,
+      isTrending: isTrending ?? this.isTrending,
+      isNewRelease: isNewRelease ?? this.isNewRelease,
       watchProgress: watchProgress ?? this.watchProgress,
       likesCount: likesCount ?? this.likesCount,
       sharesCount: sharesCount ?? this.sharesCount,
@@ -255,6 +274,92 @@ class MovieCatalogData {
       }
     } catch (_) {}
     return null;
+  }
+
+  /// Saves custom movie poster, title, featured status, or new Streamtape movie via Admin Panel
+  static Future<bool> saveAdminMovieOverride(
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      final req = await html.HttpRequest.request(
+        "/api/streamtape/admin/movie",
+        method: "POST",
+        requestHeaders: {"Content-Type": "application/json"},
+        sendData: jsonEncode(payload),
+      );
+      return req.status == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Deletes a movie from the catalog via Admin Panel
+  static Future<bool> deleteAdminMovie(String id) async {
+    try {
+      final req = await html.HttpRequest.request(
+        "/api/streamtape/admin/delete",
+        method: "POST",
+        requestHeaders: {"Content-Type": "application/json"},
+        sendData: jsonEncode({"id": id}),
+      );
+      return req.status == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Restores any deleted Streamtape movies via Admin Panel
+  static Future<bool> restoreDeletedMovies() async {
+    try {
+      final req = await html.HttpRequest.request(
+        "/api/streamtape/admin/restore",
+        method: "POST",
+        requestHeaders: {"Content-Type": "application/json"},
+        sendData: "{}",
+      );
+      return req.status == 200;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Fetches current Streamtape API login & key
+  static Future<Map<String, String>> fetchStreamtapeCredentials() async {
+    try {
+      final resText =
+          await html.HttpRequest.getString("/api/streamtape/credentials");
+      final decoded = jsonDecode(resText);
+      if (decoded is Map<String, dynamic>) {
+        return {
+          "login": (decoded["login"] ?? "fa66d0d4d79c646de270").toString(),
+          "key": (decoded["key"] ?? "2LBZ94jDzWFxyD").toString(),
+        };
+      }
+    } catch (_) {}
+    return {
+      "login": "fa66d0d4d79c646de270",
+      "key": "2LBZ94jDzWFxyD",
+    };
+  }
+
+  /// Updates Streamtape API login & key from Admin Panel
+  static Future<bool> updateStreamtapeCredentials(
+    String login,
+    String key,
+  ) async {
+    try {
+      final req = await html.HttpRequest.request(
+        "/api/streamtape/credentials",
+        method: "POST",
+        requestHeaders: {"Content-Type": "application/json"},
+        sendData: jsonEncode({"login": login, "key": key}),
+      );
+      if (req.status == 200 && req.responseText != null) {
+        final decoded = jsonDecode(req.responseText!);
+        return decoded is Map && decoded["valid"] == true;
+      }
+    } catch (_) {}
+    return false;
   }
 
   /// All 21 real movies and series episodes from the user's Streamtape account (`fa66d0d4d79c646de270`)
