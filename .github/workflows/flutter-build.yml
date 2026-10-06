@@ -95,20 +95,110 @@ jobs:
           restore-keys: |
             android-gradle-cache-${{ runner.os }}-
 
-      - name: Ensure Android Platform Scaffold & Permissions
+      - name: Ensure Android Platform Scaffold, Chrome Custom Tabs & File Picker Permissions
         run: |
           if [ ! -d "android" ]; then
             flutter create --platforms=android --org com.niooo.m --project-name flutter_live_app .
           fi
-          # Ensure INTERNET permission is present in AndroidManifest.xml
-          MANIFEST="android/app/src/main/AndroidManifest.xml"
-          if [ -f "$MANIFEST" ] && ! grep -q "android.permission.INTERNET" "$MANIFEST"; then
-            sed -i 's/<application/<uses-permission android:name="android.permission.INTERNET"\/>\n    <application/' "$MANIFEST"
-          fi
-          # Set app label to Niooo M
-          if [ -f "$MANIFEST" ]; then
-            sed -i 's/android:label="[^"]*"/android:label="Niooo M"/' "$MANIFEST"
-          fi
+
+          # Configure AndroidManifest.xml with:
+          # 1. File Manager / File Picker permissions
+          # 2. Google Chrome Custom Tabs (Mini Chrome Browser) service queries
+          # 3. File Picker / Chooser Intent Filters (GET_CONTENT, PICK, OPEN_DOCUMENT) so WhatsApp/other apps show Niooo M in the file picker and tapping it opens Niooo M directly
+          cat << 'EOF' > android/app/src/main/AndroidManifest.xml
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+              xmlns:tools="http://schemas.android.com/tools">
+
+              <!-- Network & Browser Permissions -->
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
+              <!-- File Manager / File Picker Storage & Media Permissions -->
+              <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+              <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+              <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+              <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+              <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+              <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
+
+              <!-- Queries for Google Chrome Custom Tabs (Mini Chrome Browser) & Text Processing -->
+              <queries>
+                  <intent>
+                      <action android:name="android.support.customtabs.action.CustomTabsService" />
+                  </intent>
+                  <intent>
+                      <action android:name="android.intent.action.VIEW" />
+                      <category android:name="android.intent.category.BROWSABLE" />
+                      <data android:scheme="https" />
+                  </intent>
+                  <intent>
+                      <action android:name="android.intent.action.VIEW" />
+                      <category android:name="android.intent.category.BROWSABLE" />
+                      <data android:scheme="http" />
+                  </intent>
+                  <intent>
+                      <action android:name="android.intent.action.PROCESS_TEXT" />
+                      <data android:mimeType="text/plain" />
+                  </intent>
+              </queries>
+
+              <application
+                  android:label="Niooo M"
+                  android:name="${applicationName}"
+                  android:icon="@mipmap/ic_launcher"
+                  android:usesCleartextTraffic="true"
+                  android:requestLegacyExternalStorage="true">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:launchMode="singleTop"
+                      android:taskAffinity=""
+                      android:theme="@style/LaunchTheme"
+                      android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
+                      android:hardwareAccelerated="true"
+                      android:windowSoftInputMode="adjustResize">
+
+                      <meta-data
+                          android:name="io.flutter.embedding.android.NormalTheme"
+                          android:resource="@style/NormalTheme" />
+
+                      <!-- Main App Launcher -->
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+
+                      <!-- System File Picker / File Manager Chooser Integration (WhatsApp & External Apps Upload Picker) -->
+                      <!-- Shows Niooo M in system File Picker and opens Niooo M directly when selected -->
+                      <intent-filter android:label="Niooo M">
+                          <action android:name="android.intent.action.GET_CONTENT" />
+                          <category android:name="android.intent.category.DEFAULT" />
+                          <category android:name="android.intent.category.OPENABLE" />
+                          <data android:mimeType="*/*" />
+                      </intent-filter>
+
+                      <intent-filter android:label="Niooo M">
+                          <action android:name="android.intent.action.PICK" />
+                          <category android:name="android.intent.category.DEFAULT" />
+                          <category android:name="android.intent.category.OPENABLE" />
+                          <data android:mimeType="*/*" />
+                      </intent-filter>
+
+                      <intent-filter android:label="Niooo M">
+                          <action android:name="android.intent.action.OPEN_DOCUMENT" />
+                          <category android:name="android.intent.category.DEFAULT" />
+                          <category android:name="android.intent.category.OPENABLE" />
+                          <data android:mimeType="*/*" />
+                      </intent-filter>
+                  </activity>
+
+                  <meta-data
+                      android:name="flutterEmbedding"
+                      android:value="2" />
+              </application>
+          </manifest>
+          EOF
 
       - name: Get dependencies
         run: flutter pub get
@@ -131,15 +221,13 @@ jobs:
         run: |
           TAG="latest"
           TITLE="Niooo M — Latest Android Release APK"
-          NOTES="Automated Android Release APK build for **Niooo M** (Commit: \`${GITHUB_SHA::7}\`). Every new build automatically replaces \`Niooo-M-release.apk\` in this single release without creating duplicate releases."
+          NOTES="Automated Android Release APK build for **Niooo M** (Commit: \`${GITHUB_SHA::7}\`). Includes Google Chrome Custom Tabs (Mini In-App Chrome Browser) and System File Picker / Chooser Intent permissions. Every new build automatically replaces \`Niooo-M-release.apk\` in this single release."
 
-          # Update the 'latest' git tag to point to the current commit
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag -fa "$TAG" -m "Latest Android Release APK"
           git push origin "$TAG" --force
 
-          # If the single release already exists, upload & overwrite (--clobber) the APK file in place
           if gh release view "$TAG" >/dev/null 2>&1; then
             echo "Updating existing single release '$TAG' and replacing APK..."
             gh release upload "$TAG" ./Niooo-M-release.apk --clobber
