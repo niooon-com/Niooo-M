@@ -1,6 +1,5 @@
 import "dart:convert";
-// ignore: avoid_web_libraries_in_flutter
-import "dart:html" as html;
+import "../services/platform_bridge.dart";
 
 class CastMember {
   final String name;
@@ -241,7 +240,7 @@ class MovieCatalogData {
       final url = forceRefresh
           ? "/api/streamtape/catalog?refresh=1"
           : "/api/streamtape/catalog";
-      final responseText = await html.HttpRequest.getString(url);
+      final responseText = await PlatformBridge.httpGetString(url);
       final decoded = jsonDecode(responseText);
       if (decoded is Map<String, dynamic> && decoded["movies"] is List) {
         final List<dynamic> rawList = decoded["movies"] as List<dynamic>;
@@ -262,7 +261,7 @@ class MovieCatalogData {
   /// Resolves the direct MP4 video stream URL from `/api/streamtape/direct?file=<id>`
   static Future<String?> resolveDirectStreamUrl(String fileId) async {
     try {
-      final responseText = await html.HttpRequest.getString(
+      final responseText = await PlatformBridge.httpGetString(
         "/api/streamtape/direct?file=${Uri.encodeComponent(fileId)}",
       );
       final decoded = jsonDecode(responseText);
@@ -281,13 +280,11 @@ class MovieCatalogData {
     Map<String, dynamic> payload,
   ) async {
     try {
-      final req = await html.HttpRequest.request(
+      final status = await PlatformBridge.httpPostJson(
         "/api/streamtape/admin/movie",
-        method: "POST",
-        requestHeaders: {"Content-Type": "application/json"},
-        sendData: jsonEncode(payload),
+        payload,
       );
-      return req.status == 200;
+      return status == 200;
     } catch (_) {
       return false;
     }
@@ -296,13 +293,11 @@ class MovieCatalogData {
   /// Deletes a movie from the catalog via Admin Panel
   static Future<bool> deleteAdminMovie(String id) async {
     try {
-      final req = await html.HttpRequest.request(
+      final status = await PlatformBridge.httpPostJson(
         "/api/streamtape/admin/delete",
-        method: "POST",
-        requestHeaders: {"Content-Type": "application/json"},
-        sendData: jsonEncode({"id": id}),
+        {"id": id},
       );
-      return req.status == 200;
+      return status == 200;
     } catch (_) {
       return false;
     }
@@ -311,13 +306,11 @@ class MovieCatalogData {
   /// Restores any deleted Streamtape movies via Admin Panel
   static Future<bool> restoreDeletedMovies() async {
     try {
-      final req = await html.HttpRequest.request(
+      final status = await PlatformBridge.httpPostJson(
         "/api/streamtape/admin/restore",
-        method: "POST",
-        requestHeaders: {"Content-Type": "application/json"},
-        sendData: "{}",
+        {},
       );
-      return req.status == 200;
+      return status == 200;
     } catch (_) {
       return false;
     }
@@ -327,7 +320,7 @@ class MovieCatalogData {
   static Future<Map<String, String>> fetchStreamtapeCredentials() async {
     try {
       final resText =
-          await html.HttpRequest.getString("/api/streamtape/credentials");
+          await PlatformBridge.httpGetString("/api/streamtape/credentials");
       final decoded = jsonDecode(resText);
       if (decoded is Map<String, dynamic>) {
         return {
@@ -348,14 +341,12 @@ class MovieCatalogData {
     String key,
   ) async {
     try {
-      final req = await html.HttpRequest.request(
+      final resText = await PlatformBridge.httpPostJsonResponse(
         "/api/streamtape/credentials",
-        method: "POST",
-        requestHeaders: {"Content-Type": "application/json"},
-        sendData: jsonEncode({"login": login, "key": key}),
+        {"login": login, "key": key},
       );
-      if (req.status == 200 && req.responseText != null) {
-        final decoded = jsonDecode(req.responseText!);
+      if (resText != null) {
+        final decoded = jsonDecode(resText);
         return decoded is Map && decoded["valid"] == true;
       }
     } catch (_) {}
