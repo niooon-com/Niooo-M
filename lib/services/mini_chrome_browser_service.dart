@@ -55,8 +55,9 @@ class MiniChromeBrowserService {
           closeButton: custom_tabs.CustomTabsCloseButton(
             icon: custom_tabs.CustomTabsCloseButtonIcons.back,
           ),
-          partial: custom_tabs.CustomTabsPartialConfiguration.builder(
+          partial: custom_tabs.PartialCustomTabsConfiguration.adaptiveSheet(
             initialHeight: MediaQuery.of(context).size.height * 0.88,
+            initialWidth: MediaQuery.of(context).size.width * 0.96,
             activityHeightResizeBehavior:
                 custom_tabs.CustomTabsActivityHeightResizeBehavior.adjustable,
             cornerRadius: 20,
