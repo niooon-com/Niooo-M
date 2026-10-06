@@ -504,7 +504,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                     ),
                   ),
 
-                  // Streamtape Direct / Mini Chrome Custom Tab Toggle Pill on Top-Right
+                  // Streamtape Direct / Cloud Mode Toggle Pill on Top-Right
                   Positioned(
                     top: 10,
                     right: 12,
@@ -516,15 +516,6 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                         } else if (_useDirectStream) {
                           PlatformBridge.pauseVideo(_videoElement);
                           setState(() => _useDirectStream = false);
-                        } else {
-                          final targetUrl = movie.embedUrl.isNotEmpty
-                              ? movie.embedUrl
-                              : "https://streamtape.com/e/${movie.id}";
-                          MiniChromeBrowserService.openUrl(
-                            context,
-                            targetUrl,
-                            title: movie.title,
-                          );
                         }
                       },
                       child: ClipRRect(
