@@ -10,21 +10,23 @@ class CastMember {
   });
 }
 
-class MovieReview {
+class MovieComment {
   final String id;
   final String authorName;
   final String authorHandle;
-  final double rating;
+  final String avatarUrl;
   final String comment;
   final String timeAgo;
+  final int likes;
 
-  const MovieReview({
+  const MovieComment({
     required this.id,
     required this.authorName,
     required this.authorHandle,
-    required this.rating,
+    required this.avatarUrl,
     required this.comment,
     required this.timeAgo,
+    this.likes = 0,
   });
 }
 
@@ -40,15 +42,18 @@ class MovieItem {
   final int releaseYear;
   final String duration;
   final String maturityRating;
-  final String qualityBadge; // e.g. "4K HDR · Dolby Atmos"
+  final String qualityBadge;
   final List<String> genres;
   final String director;
   final List<CastMember> cast;
   final bool isFeatured;
   final bool isTrending;
   final bool isNewRelease;
-  final double watchProgress; // 0.0 to 1.0 for Continue Watching
-  final List<MovieReview> reviews;
+  final double watchProgress;
+  final int likesCount;
+  final int sharesCount;
+  final String viewsLabel;
+  final List<MovieComment> comments;
 
   const MovieItem({
     required this.id,
@@ -70,13 +75,17 @@ class MovieItem {
     this.isTrending = false,
     this.isNewRelease = false,
     this.watchProgress = 0.0,
-    this.reviews = const [],
+    this.likesCount = 1240,
+    this.sharesCount = 310,
+    this.viewsLabel = "1.8M views",
+    this.comments = const [],
   });
 
   MovieItem copyWith({
     double? watchProgress,
-    List<MovieReview>? reviews,
-    double? rating,
+    int? likesCount,
+    int? sharesCount,
+    List<MovieComment>? comments,
   }) {
     return MovieItem(
       id: id,
@@ -86,7 +95,7 @@ class MovieItem {
       posterUrl: posterUrl,
       backdropUrl: backdropUrl,
       videoStreamUrl: videoStreamUrl,
-      rating: rating ?? this.rating,
+      rating: rating,
       releaseYear: releaseYear,
       duration: duration,
       maturityRating: maturityRating,
@@ -98,7 +107,10 @@ class MovieItem {
       isTrending: isTrending,
       isNewRelease: isNewRelease,
       watchProgress: watchProgress ?? this.watchProgress,
-      reviews: reviews ?? this.reviews,
+      likesCount: likesCount ?? this.likesCount,
+      sharesCount: sharesCount ?? this.sharesCount,
+      viewsLabel: viewsLabel,
+      comments: comments ?? this.comments,
     );
   }
 }
@@ -110,7 +122,7 @@ class MovieCatalogData {
       title: "Solaris Protocol: Eclipse",
       tagline: "Beyond the event horizon lies the final transmission.",
       synopsis:
-          "In 2094, Commander Aria Vance leads a deep-space reconnaissance crew aboard the vessel Hyperion to investigate a quantum signal originating from a Dyson swarm around a dying star. What they uncover challenges the foundation of human consciousness.",
+          "In 2094, Commander Aria Vance leads a deep-space reconnaissance crew aboard the vessel Hyperion to investigate a quantum signal originating from a Dyson swarm around a dying star.",
       posterUrl:
           "https://images.unsplash.com/photo-1534447677768-be436bb09401?auto=format&fit=crop&w=900&q=85",
       backdropUrl:
@@ -119,7 +131,7 @@ class MovieCatalogData {
           "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/TearsOfSteel.mp4",
       rating: 9.4,
       releaseYear: 2026,
-      duration: "2h 28m",
+      duration: "12:14",
       maturityRating: "PG-13",
       qualityBadge: "4K IMAX · Dolby Atmos",
       genres: ["Sci-Fi", "Thriller", "Action"],
@@ -128,6 +140,9 @@ class MovieCatalogData {
       isTrending: true,
       isNewRelease: true,
       watchProgress: 0.64,
+      likesCount: 24800,
+      sharesCount: 4920,
+      viewsLabel: "2.4M views",
       cast: const [
         CastMember(
           name: "Elena Rostova",
@@ -148,24 +163,28 @@ class MovieCatalogData {
               "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=300&q=80",
         ),
       ],
-      reviews: const [
-        MovieReview(
-          id: "rev_1",
+      comments: const [
+        MovieComment(
+          id: "c_1",
           authorName: "Arif Rahman",
           authorHandle: "@arif_cinema",
-          rating: 9.5,
+          avatarUrl:
+              "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80",
           comment:
-              "Breathtaking visual design and soundscape. The zero-gravity docking sequence is pure cinema.",
+              "Breathtaking visual design and soundscape! The zero-gravity docking scene is pure cinema.",
           timeAgo: "2h ago",
+          likes: 342,
         ),
-        MovieReview(
-          id: "rev_2",
+        MovieComment(
+          id: "c_2",
           authorName: "Sophia Lin",
           authorHandle: "@sophia_scifi",
-          rating: 9.2,
+          avatarUrl:
+              "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80",
           comment:
-              "One of the best hard sci-fi thrillers of the decade. Every frame feels like a painting.",
+              "Watching this on Niooo M in 4K HDR—every frame looks like an oil painting.",
           timeAgo: "5h ago",
+          likes: 189,
         ),
       ],
     ),
@@ -174,7 +193,7 @@ class MovieCatalogData {
       title: "The Emerald Syndicate",
       tagline: "Every fortune leaves a digital shadow.",
       synopsis:
-          "When an underground cryptographic vault in Neo-Zurich is breached during a blackout, a former intelligence architect must outmaneuver an international syndicate across Tokyo, Geneva, and Singapore before the global ledger resets.",
+          "When an underground cryptographic vault in Neo-Zurich is breached during a blackout, a former intelligence architect must outmaneuver an international syndicate across Tokyo, Geneva, and Singapore.",
       posterUrl:
           "https://images.unsplash.com/photo-1509198397868-475647b2a1e5?auto=format&fit=crop&w=900&q=85",
       backdropUrl:
@@ -183,7 +202,7 @@ class MovieCatalogData {
           "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerBlazes.mp4",
       rating: 9.1,
       releaseYear: 2026,
-      duration: "2h 14m",
+      duration: "14:50",
       maturityRating: "R",
       qualityBadge: "4K UHD · HDR10+",
       genres: ["Action", "Crime", "Thriller"],
@@ -192,6 +211,9 @@ class MovieCatalogData {
       isTrending: true,
       isNewRelease: true,
       watchProgress: 0.35,
+      likesCount: 18350,
+      sharesCount: 3120,
+      viewsLabel: "1.9M views",
       cast: const [
         CastMember(
           name: "Liam Vance",
@@ -206,15 +228,17 @@ class MovieCatalogData {
               "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=300&q=80",
         ),
       ],
-      reviews: const [
-        MovieReview(
-          id: "rev_3",
+      comments: const [
+        MovieComment(
+          id: "c_3",
           authorName: "Tanvir Hasan",
           authorHandle: "@tanvir_reviews",
-          rating: 9.0,
+          avatarUrl:
+              "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80",
           comment:
               "Non-stop adrenaline from the opening heist in Zurich to the rooftop chase in Tokyo!",
           timeAgo: "1d ago",
+          likes: 215,
         ),
       ],
     ),
@@ -225,14 +249,14 @@ class MovieCatalogData {
       synopsis:
           "Across the shattered floating continents of Aeloria, a young cartographer discovers an ancient astrolabe capable of awakening the slumbering Leviathans of the Sky.",
       posterUrl:
-          "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=900&q=85",
+          "https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=900&q=85",
       backdropUrl:
-          "https://images.unsplash.com/photo-1579783902614-a3fb3927b675?auto=format&fit=crop&w=1600&q=85",
+          "https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=1600&q=85",
       videoStreamUrl:
           "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/Sintel.mp4",
       rating: 8.9,
       releaseYear: 2025,
-      duration: "2h 42m",
+      duration: "14:48",
       maturityRating: "PG-13",
       qualityBadge: "4K Dolby Vision",
       genres: ["Fantasy", "Adventure", "Drama"],
@@ -241,6 +265,9 @@ class MovieCatalogData {
       isTrending: true,
       isNewRelease: false,
       watchProgress: 0.0,
+      likesCount: 31200,
+      sharesCount: 6400,
+      viewsLabel: "3.7M views",
       cast: const [
         CastMember(
           name: "Freya Lind",
@@ -253,6 +280,19 @@ class MovieCatalogData {
           role: "Lord Valerius",
           avatarUrl:
               "https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?auto=format&fit=crop&w=300&q=80",
+        ),
+      ],
+      comments: const [
+        MovieComment(
+          id: "c_4",
+          authorName: "Nadia Islam",
+          authorHandle: "@nadia_films",
+          avatarUrl:
+              "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=200&q=80",
+          comment:
+              "The dragon flight sequence in 4K is unforgettable. Masterpiece animation and score!",
+          timeAgo: "3h ago",
+          likes: 410,
         ),
       ],
     ),
@@ -270,15 +310,18 @@ class MovieCatalogData {
           "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ElephantsDream.mp4",
       rating: 9.3,
       releaseYear: 2026,
-      duration: "1h 58m",
+      duration: "10:53",
       maturityRating: "R",
       qualityBadge: "4K 60FPS · HDR",
-      genres: ["Sci-Fi", "Action", "Anime"],
+      genres: ["Sci-Fi", "Action", "Cyberpunk"],
       director: "Hiroshi Sato",
       isFeatured: false,
       isTrending: true,
       isNewRelease: true,
       watchProgress: 0.82,
+      likesCount: 29400,
+      sharesCount: 5190,
+      viewsLabel: "2.9M views",
       cast: const [
         CastMember(
           name: "Renji Ito",
@@ -287,6 +330,7 @@ class MovieCatalogData {
               "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=300&q=80",
         ),
       ],
+      comments: const [],
     ),
     MovieItem(
       id: "mov_velvet_nocturne",
@@ -302,7 +346,7 @@ class MovieCatalogData {
           "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4",
       rating: 8.7,
       releaseYear: 2025,
-      duration: "2h 06m",
+      duration: "09:56",
       maturityRating: "PG-13",
       qualityBadge: "4K UHD · Lossless Audio",
       genres: ["Drama", "Mystery", "Romance"],
@@ -311,6 +355,9 @@ class MovieCatalogData {
       isTrending: false,
       isNewRelease: true,
       watchProgress: 0.0,
+      likesCount: 14200,
+      sharesCount: 1980,
+      viewsLabel: "1.2M views",
       cast: const [
         CastMember(
           name: "Claire Dubois",
@@ -319,6 +366,7 @@ class MovieCatalogData {
               "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=300&q=80",
         ),
       ],
+      comments: const [],
     ),
     MovieItem(
       id: "mov_apex_velocity",
@@ -334,7 +382,7 @@ class MovieCatalogData {
           "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerEscapes.mp4",
       rating: 8.8,
       releaseYear: 2026,
-      duration: "2h 19m",
+      duration: "15:20",
       maturityRating: "PG-13",
       qualityBadge: "4K IMAX · Dolby Atmos",
       genres: ["Action", "Drama", "Sports"],
@@ -343,6 +391,9 @@ class MovieCatalogData {
       isTrending: true,
       isNewRelease: true,
       watchProgress: 0.0,
+      likesCount: 21700,
+      sharesCount: 4050,
+      viewsLabel: "2.1M views",
       cast: const [
         CastMember(
           name: "Matteo Rossi",
@@ -351,6 +402,7 @@ class MovieCatalogData {
               "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=300&q=80",
         ),
       ],
+      comments: const [],
     ),
     MovieItem(
       id: "mov_abyssal_echo",
@@ -366,15 +418,18 @@ class MovieCatalogData {
           "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4",
       rating: 8.6,
       releaseYear: 2025,
-      duration: "1h 54m",
+      duration: "11:40",
       maturityRating: "R",
       qualityBadge: "4K HDR10",
-      genres: ["Thriller", "Sci-Fi", "Horror"],
+      genres: ["Thriller", "Sci-Fi", "Adventure"],
       director: "Jonas Lindholm",
       isFeatured: false,
       isTrending: false,
       isNewRelease: false,
       watchProgress: 0.0,
+      likesCount: 11900,
+      sharesCount: 1540,
+      viewsLabel: "980K views",
       cast: const [
         CastMember(
           name: "Hannah Volkov",
@@ -383,6 +438,7 @@ class MovieCatalogData {
               "https://images.unsplash.com/photo-1544005313-94ddf0286df2?auto=format&fit=crop&w=300&q=80",
         ),
       ],
+      comments: const [],
     ),
     MovieItem(
       id: "mov_quantum_heist",
@@ -398,7 +454,7 @@ class MovieCatalogData {
           "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/ForBiggerJoy.mp4",
       rating: 9.0,
       releaseYear: 2026,
-      duration: "2h 09m",
+      duration: "13:25",
       maturityRating: "PG-13",
       qualityBadge: "4K Dolby Vision",
       genres: ["Action", "Sci-Fi", "Crime"],
@@ -407,6 +463,9 @@ class MovieCatalogData {
       isTrending: true,
       isNewRelease: true,
       watchProgress: 0.0,
+      likesCount: 19600,
+      sharesCount: 3410,
+      viewsLabel: "1.7M views",
       cast: const [
         CastMember(
           name: "Devon Brooks",
@@ -415,6 +474,7 @@ class MovieCatalogData {
               "https://images.unsplash.com/photo-1506794778202-cad84cf45f1d?auto=format&fit=crop&w=300&q=80",
         ),
       ],
+      comments: const [],
     ),
   ];
 }
