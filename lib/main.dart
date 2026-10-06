@@ -5,9 +5,8 @@ import "pages/welcome_page.dart";
 import "pages/home_movies_page.dart";
 import "pages/explore_page.dart";
 import "pages/watchlist_page.dart";
-import "pages/movie_detail_page.dart";
-import "pages/video_player_modal.dart";
 import "pages/profile_settings_page.dart";
+import "pages/movie_player_page.dart";
 import "widgets/fluid_glass_bottom_bar.dart";
 
 void main() {
@@ -20,7 +19,7 @@ class NioooMovieApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: "Niooo M",
+      title: "niooo",
       debugShowCheckedModeBanner: false,
       theme: ThemeData(
         brightness: Brightness.dark,
@@ -47,6 +46,7 @@ class NioooCinemaMainScreen extends StatefulWidget {
 
 class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen> {
   late List<MovieItem> _movies;
+  final Set<String> _likedMovieIds = {"mov_solaris_protocol"};
   final Set<String> _watchlistIds = {
     "mov_solaris_protocol",
     "mov_emerald_syndicate",
@@ -54,8 +54,7 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen> {
 
   bool _hasDismissedWelcome = false;
   int _activeNavIndex = 0; // 0: Home, 1: Explore, 2: Watchlist, 3: Profile
-  MovieItem? _selectedMovieDetail;
-  MovieItem? _playingMovie;
+  String? _activePlayingMovieId;
 
   String _streamQuality = "4K IMAX HDR";
   bool _dolbyAtmosEnabled = true;
@@ -65,6 +64,38 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen> {
   void initState() {
     super.initState();
     _movies = List<MovieItem>.from(MovieCatalogData.initialMovies);
+  }
+
+  MovieItem? get _activePlayingMovie {
+    if (_activePlayingMovieId == null) return null;
+    for (final m in _movies) {
+      if (m.id == _activePlayingMovieId) return m;
+    }
+    return null;
+  }
+
+  void _openMoviePlayer(MovieItem movie) {
+    setState(() {
+      _activePlayingMovieId = movie.id;
+    });
+  }
+
+  void _toggleLikeMovie(String movieId) {
+    setState(() {
+      final isCurrentlyLiked = _likedMovieIds.contains(movieId);
+      if (isCurrentlyLiked) {
+        _likedMovieIds.remove(movieId);
+      } else {
+        _likedMovieIds.add(movieId);
+      }
+
+      _movies = _movies.map((m) {
+        if (m.id != movieId) return m;
+        final updatedLikes =
+            isCurrentlyLiked ? (m.likesCount - 1) : (m.likesCount + 1);
+        return m.copyWith(likesCount: updatedLikes < 0 ? 0 : updatedLikes);
+      }).toList();
+    });
   }
 
   void _toggleWatchlist(String movieId) {
@@ -77,59 +108,61 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen> {
     });
   }
 
-  void _updateMovieProgress(String movieId, double progress) {
+  void _incrementShareCount(String movieId) {
     setState(() {
       _movies = _movies.map((m) {
-        if (m.id == movieId) {
-          return m.copyWith(watchProgress: progress);
-        }
-        return m;
+        if (m.id != movieId) return m;
+        return m.copyWith(sharesCount: m.sharesCount + 1);
       }).toList();
-      if (_selectedMovieDetail?.id == movieId) {
-        _selectedMovieDetail =
-            _selectedMovieDetail!.copyWith(watchProgress: progress);
-      }
     });
   }
 
-  void _addMovieReview(String movieId, double rating, String comment) {
-    final newReview = MovieReview(
-      id: "rev_${DateTime.now().millisecondsSinceEpoch}",
-      authorName: "Niooo Cinema Member",
-      authorHandle: "@niooo_vip",
-      rating: rating,
-      comment: comment,
+  void _addCommentToMovie(String movieId, String commentText) {
+    final trimmed = commentText.trim();
+    if (trimmed.isEmpty) return;
+
+    final newComment = MovieComment(
+      id: "c_${DateTime.now().millisecondsSinceEpoch}",
+      authorName: "Raihan Cinema",
+      authorHandle: "@niooo_member",
+      avatarUrl:
+          "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80",
+      comment: trimmed,
       timeAgo: "Just now",
+      likes: 1,
     );
 
     setState(() {
       _movies = _movies.map((m) {
-        if (m.id == movieId) {
-          final updatedReviews = [newReview, ...m.reviews];
-          return m.copyWith(reviews: updatedReviews);
-        }
-        return m;
-      }).toList();
-
-      if (_selectedMovieDetail?.id == movieId) {
-        _selectedMovieDetail = _selectedMovieDetail!.copyWith(
-          reviews: [newReview, ..._selectedMovieDetail!.reviews],
+        if (m.id != movieId) return m;
+        return m.copyWith(
+          comments: [newComment, ...m.comments],
         );
-      }
+      }).toList();
+    });
+  }
+
+  void _updateMovieProgress(String movieId, double ratio) {
+    if (ratio <= 0.02) return;
+    setState(() {
+      _movies = _movies.map((m) {
+        if (m.id != movieId) return m;
+        return m.copyWith(watchProgress: ratio.clamp(0.05, 0.98));
+      }).toList();
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool hideBottomNav = !_hasDismissedWelcome ||
-        _selectedMovieDetail != null ||
-        _playingMovie != null;
+    final activeMovie = _activePlayingMovie;
+    final bool hideBottomNav = !_hasDismissedWelcome || activeMovie != null;
 
     return Scaffold(
       backgroundColor: const Color(0xFF030706),
+      resizeToAvoidBottomInset: true,
       body: Stack(
         children: [
-          // Pitch-black cinema backdrop with deep emerald liquid ambient glows
+          // Deep pitch-black and emerald cinema backdrop
           Positioned.fill(
             child: Container(
               decoration: const BoxDecoration(
@@ -145,19 +178,20 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen> {
               ),
             ),
           ),
+          // Top-left luminous emerald aurora orb
           Positioned(
             top: -130,
             left: -110,
             child: IgnorePointer(
               child: Container(
-                width: 480,
-                height: 480,
+                width: 460,
+                height: 460,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: RadialGradient(
                     colors: [
-                      const Color(0xFF00E676).withValues(alpha: 0.20),
-                      const Color(0xFF10B981).withValues(alpha: 0.08),
+                      const Color(0xFF00E676).withValues(alpha: 0.18),
+                      const Color(0xFF10B981).withValues(alpha: 0.07),
                       Colors.transparent,
                     ],
                     stops: const [0.0, 0.45, 1.0],
@@ -166,19 +200,20 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen> {
               ),
             ),
           ),
+          // Center-right soft liquid teal-emerald glow
           Positioned(
-            top: 180,
+            top: 200,
             right: -140,
             child: IgnorePointer(
               child: Container(
-                width: 440,
-                height: 440,
+                width: 420,
+                height: 420,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   gradient: RadialGradient(
                     colors: [
-                      const Color(0xFF10B981).withValues(alpha: 0.16),
-                      const Color(0xFF047857).withValues(alpha: 0.06),
+                      const Color(0xFF10B981).withValues(alpha: 0.15),
+                      const Color(0xFF047857).withValues(alpha: 0.05),
                       Colors.transparent,
                     ],
                     stops: const [0.0, 0.5, 1.0],
@@ -188,81 +223,75 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen> {
             ),
           ),
 
-          // Main Screen Content
+          // Full-Screen Edge-to-Edge Body Content
           SafeArea(
             child: !_hasDismissedWelcome
                 ? WelcomePage(
                     onGetStarted: () =>
                         setState(() => _hasDismissedWelcome = true),
                   )
-                : (_selectedMovieDetail != null
-                    ? MovieDetailPage(
-                        movie: _selectedMovieDetail!,
+                : (activeMovie != null
+                    ? MoviePlayerPage(
+                        movie: activeMovie,
                         allMovies: _movies,
-                        isBookmarked:
-                            _watchlistIds.contains(_selectedMovieDetail!.id),
+                        isLiked: _likedMovieIds.contains(activeMovie.id),
+                        isBookmarked: _watchlistIds.contains(activeMovie.id),
                         onBack: () =>
-                            setState(() => _selectedMovieDetail = null),
-                        onPlayMovie: (movie) =>
-                            setState(() => _playingMovie = movie),
-                        onToggleWatchlist: _toggleWatchlist,
-                        onSelectRelatedMovie: (movie) =>
-                            setState(() => _selectedMovieDetail = movie),
-                        onAddReview: _addMovieReview,
+                            setState(() => _activePlayingMovieId = null),
+                        onToggleLike: () => _toggleLikeMovie(activeMovie.id),
+                        onToggleBookmark: () =>
+                            _toggleWatchlist(activeMovie.id),
+                        onShareMovie: () =>
+                            _incrementShareCount(activeMovie.id),
+                        onAddComment: (comment) =>
+                            _addCommentToMovie(activeMovie.id, comment),
+                        onSelectOtherMovie: (nextMovie) =>
+                            _openMoviePlayer(nextMovie),
+                        onUpdateProgress: (ratio) =>
+                            _updateMovieProgress(activeMovie.id, ratio),
                       )
-                    : _buildActiveTabContent()),
+                    : _buildTabContent()),
           ),
 
-          // Fluid Glass Bottom Navigation Bar
+          // Floating Liquid Glass Bottom Bar when browsing catalog tabs
           if (!hideBottomNav)
             FluidGlassBottomBar(
               selectedIndex: _activeNavIndex,
-              watchlistCount: _watchlistIds.length,
-              onTabSelected: (idx) {
+              unreadChatsCount: _watchlistIds.length,
+              onTabSelected: (index) {
                 setState(() {
-                  _activeNavIndex = idx;
-                  _selectedMovieDetail = null;
+                  _activeNavIndex = index;
                 });
               },
-            ),
-
-          // Full-Screen 4K Theater Player Modal
-          if (_playingMovie != null)
-            VideoPlayerModal(
-              movie: _playingMovie!,
-              onClose: () => setState(() => _playingMovie = null),
-              onUpdateProgress: (p) =>
-                  _updateMovieProgress(_playingMovie!.id, p),
             ),
         ],
       ),
     );
   }
 
-  Widget _buildActiveTabContent() {
+  Widget _buildTabContent() {
     if (_activeNavIndex == 1) {
       return ExplorePage(
         movies: _movies,
         watchlistIds: _watchlistIds,
-        onSelectMovie: (movie) => setState(() => _selectedMovieDetail = movie),
-        onPlayMovie: (movie) => setState(() => _playingMovie = movie),
+        onPlayMovie: _openMoviePlayer,
         onToggleWatchlist: _toggleWatchlist,
       );
     } else if (_activeNavIndex == 2) {
       return WatchlistPage(
         movies: _movies,
         watchlistIds: _watchlistIds,
-        onSelectMovie: (movie) => setState(() => _selectedMovieDetail = movie),
-        onPlayMovie: (movie) => setState(() => _playingMovie = movie),
+        onPlayMovie: _openMoviePlayer,
         onToggleWatchlist: _toggleWatchlist,
         onExploreMovies: () => setState(() => _activeNavIndex = 1),
       );
     } else if (_activeNavIndex == 3) {
-      final watchedCount = _movies.where((m) => m.watchProgress > 0.0).length;
+      final watchedCount =
+          _movies.where((m) => m.watchProgress > 0.05).length;
       return ProfileSettingsPage(
-        displayName: "Niooo Cinema VIP",
-        handle: "@niooo_cinema",
-        membershipTier: "IMAX 4K Unlimited",
+        displayName: "Raihan Cinema",
+        handle: "@niooo_m",
+        membershipTier: "IMAX 4K VIP",
         streamQuality: _streamQuality,
         dolbyAtmosEnabled: _dolbyAtmosEnabled,
         autoplayTrailers: _autoplayTrailers,
@@ -278,8 +307,7 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen> {
     return HomeMoviesPage(
       movies: _movies,
       watchlistIds: _watchlistIds,
-      onSelectMovie: (movie) => setState(() => _selectedMovieDetail = movie),
-      onPlayMovie: (movie) => setState(() => _playingMovie = movie),
+      onPlayMovie: _openMoviePlayer,
       onToggleWatchlist: _toggleWatchlist,
       onOpenSearch: () => setState(() => _activeNavIndex = 1),
     );
