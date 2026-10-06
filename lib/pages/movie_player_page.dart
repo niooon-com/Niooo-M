@@ -1,11 +1,8 @@
-// ignore: avoid_web_libraries_in_flutter
-import "dart:html" as html;
 import "dart:async";
 import "dart:ui" as ui;
-// ignore: undefined_prefixed_name
-import "dart:ui_web" as ui_web;
 import "package:flutter/material.dart";
 import "../models/movie_models.dart";
+import "../services/platform_bridge.dart";
 import "../widgets/glass_container.dart";
 
 class MoviePlayerPage extends StatefulWidget {
@@ -41,7 +38,7 @@ class MoviePlayerPage extends StatefulWidget {
 }
 
 class _MoviePlayerPageState extends State<MoviePlayerPage> {
-  html.VideoElement? _videoElement;
+  Object? _videoElement;
   late String _embedViewType;
   String? _directVideoViewType;
 
@@ -84,20 +81,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
         ? movie.embedUrl
         : "https://streamtape.com/e/${movie.id}";
 
-    final iframe = html.IFrameElement()
-      ..src = embedSrc
-      ..style.border = "none"
-      ..style.width = "100%"
-      ..style.height = "100%"
-      ..style.backgroundColor = "#000000"
-      ..allowFullscreen = true
-      ..allow =
-          "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen";
-
-    ui_web.platformViewRegistry.registerViewFactory(
-      _embedViewType,
-      (int viewId) => iframe,
-    );
+    PlatformBridge.registerIframeFactory(_embedViewType, embedSrc);
 
     // Also resolve direct MP4 stream via Streamtape API (/api/streamtape/direct)
     MovieCatalogData.resolveDirectStreamUrl(movie.id).then((directUrl) {
@@ -113,48 +97,32 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
     final viewType =
         "niooo-st-direct-${movie.id}-${DateTime.now().microsecondsSinceEpoch}";
 
-    final video = html.VideoElement()
-      ..src = directMp4Url
-      ..poster = movie.backdropUrl
-      ..autoplay = false
-      ..controls = false
-      ..loop = false
-      ..style.width = "100%"
-      ..style.height = "100%"
-      ..style.objectFit = "contain"
-      ..style.backgroundColor = "#000000"
-      ..setAttribute("playsinline", "true")
-      ..setAttribute("webkit-playsinline", "true");
-
-    ui_web.platformViewRegistry.registerViewFactory(
-      viewType,
-      (int viewId) => video,
+    final video = PlatformBridge.registerVideoFactory(
+      viewType: viewType,
+      src: directMp4Url,
+      posterUrl: movie.backdropUrl,
+      onDurationLoaded: (dur) {
+        if (!mounted) return;
+        setState(() {
+          _totalSeconds = dur;
+        });
+      },
+      onPlay: () {
+        if (!mounted) return;
+        setState(() => _isPlaying = true);
+      },
+      onPause: () {
+        if (!mounted) return;
+        setState(() => _isPlaying = false);
+      },
     );
 
-    video.onLoadedMetadata.listen((_) {
-      if (!mounted) return;
-      final dur = video.duration;
-      if (!dur.isNaN && !dur.isInfinite && dur > 0) {
-        setState(() {
-          _totalSeconds = dur.toDouble();
-        });
-      }
-    });
-
-    video.onPlay.listen((_) {
-      if (!mounted) return;
-      setState(() => _isPlaying = true);
-    });
-
-    video.onPause.listen((_) {
-      if (!mounted) return;
-      setState(() => _isPlaying = false);
-    });
-
-    setState(() {
-      _videoElement = video;
-      _directVideoViewType = viewType;
-    });
+    if (video != null) {
+      setState(() {
+        _videoElement = video;
+        _directVideoViewType = viewType;
+      });
+    }
   }
 
   void _switchToDirectPlayer() {
@@ -163,18 +131,16 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
       _useDirectStream = true;
       _showControls = true;
     });
-    _videoElement!.play().catchError((_) {
-      _videoElement!.muted = true;
+    PlatformBridge.playVideo(_videoElement, () {
       if (mounted) setState(() => _isMuted = true);
-      return _videoElement!.play();
     });
 
     _progressPollTimer?.cancel();
     _progressPollTimer =
         Timer.periodic(const Duration(milliseconds: 400), (_) {
       if (!mounted || _videoElement == null) return;
-      final cur = _videoElement!.currentTime.toDouble();
-      final dur = _videoElement!.duration.toDouble();
+      final cur = PlatformBridge.getVideoCurrentTime(_videoElement);
+      final dur = PlatformBridge.getVideoDuration(_videoElement);
       if (!cur.isNaN) {
         setState(() {
           _currentSeconds = cur;
@@ -207,12 +173,12 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
   void _togglePlayPause() {
     final v = _videoElement;
     if (v == null) return;
-    if (v.paused) {
-      v.play();
+    if (PlatformBridge.isVideoPaused(v)) {
+      PlatformBridge.playVideo(v, () {});
       setState(() => _isPlaying = true);
       _scheduleHideControls();
     } else {
-      v.pause();
+      PlatformBridge.pauseVideo(v);
       setState(() => _isPlaying = false);
     }
   }
@@ -221,7 +187,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
     final v = _videoElement;
     if (v == null) return;
     final target = (_currentSeconds + deltaSeconds).clamp(0.0, _totalSeconds);
-    v.currentTime = target;
+    PlatformBridge.setVideoCurrentTime(v, target);
     setState(() => _currentSeconds = target);
     _scheduleHideControls();
   }
@@ -229,16 +195,14 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
   void _toggleMute() {
     final v = _videoElement;
     if (v == null) return;
-    v.muted = !v.muted;
-    setState(() => _isMuted = v.muted);
+    final muted = PlatformBridge.toggleVideoMute(v);
+    setState(() => _isMuted = muted);
   }
 
   void _requestFullscreen() {
     final v = _videoElement;
     if (v == null) return;
-    try {
-      v.requestFullscreen();
-    } catch (_) {}
+    PlatformBridge.requestVideoFullscreen(v);
   }
 
   void _disposeVideo() {
@@ -248,8 +212,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
       final ratio = (_currentSeconds / _totalSeconds).clamp(0.0, 1.0);
       widget.onUpdateProgress(ratio);
     }
-    _videoElement?.pause();
-    _videoElement?.src = "";
+    PlatformBridge.disposeVideo(_videoElement);
     _videoElement = null;
     _directVideoViewType = null;
   }
@@ -281,11 +244,9 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
 
   void _handleShareTap() {
     widget.onShareMovie();
-    try {
-      html.window.navigator.clipboard?.writeText(
-        "https://streamtape.com/v/${widget.movie.id}",
-      );
-    } catch (_) {}
+    PlatformBridge.copyToClipboard(
+      "https://streamtape.com/v/${widget.movie.id}",
+    );
     setState(() => _showShareBanner = true);
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted) setState(() => _showShareBanner = false);
@@ -330,13 +291,25 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                 children: [
                   if (!_useDirectStream)
                     // Official Streamtape Cloud Embed Player
-                    HtmlElementView(viewType: _embedViewType)
+                    PlatformBridge.buildEmbeddedPlayer(
+                      viewType: _embedViewType,
+                      embedSrc: movie.embedUrl.isNotEmpty
+                          ? movie.embedUrl
+                          : "https://streamtape.com/e/${movie.id}",
+                      backdropUrl: movie.backdropUrl,
+                      title: movie.title,
+                    )
                   else if (_directVideoViewType != null)
                     // Direct Streamtape MP4 Stream with Custom Glass Controls
                     Stack(
                       fit: StackFit.expand,
                       children: [
-                        HtmlElementView(viewType: _directVideoViewType!),
+                        PlatformBridge.buildEmbeddedPlayer(
+                          viewType: _directVideoViewType!,
+                          embedSrc: movie.videoStreamUrl,
+                          backdropUrl: movie.backdropUrl,
+                          title: movie.title,
+                        ),
                         GestureDetector(
                           behavior: HitTestBehavior.opaque,
                           onTap: _toggleControlsVisibility,
@@ -451,8 +424,9 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                                               onChanged: (v) {
                                                 final target =
                                                     v * _totalSeconds;
-                                                _videoElement?.currentTime =
-                                                    target;
+                                                PlatformBridge
+                                                    .setVideoCurrentTime(
+                                                        _videoElement, target);
                                                 setState(() =>
                                                     _currentSeconds = target);
                                                 _scheduleHideControls();
