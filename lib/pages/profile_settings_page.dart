@@ -80,7 +80,6 @@ class ProfileSettingsPage extends StatelessWidget {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 4, 16, 95),
               children: [
-                // Profile Card
                 Container(
                   padding: const EdgeInsets.all(18),
                   decoration: BoxDecoration(
@@ -143,32 +142,7 @@ class ProfileSettingsPage extends StatelessWidget {
                     ],
                   ),
                 ),
-
-                const SizedBox(height: 14),
-
-                // Stats Row
-                Row(
-                  children: [
-                    Expanded(
-                      child: _statBox(
-                        "Watchlist",
-                        "$watchlistCount Movies",
-                        Icons.bookmark_rounded,
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: _statBox(
-                        "In Progress",
-                        "$watchedCount Titles",
-                        Icons.play_circle_fill_rounded,
-                      ),
-                    ),
-                  ],
-                ),
-
-                const SizedBox(height: 20),
-
+                const SizedBox(height: 16),
                 const Text(
                   "STREAMING QUALITY",
                   style: TextStyle(
@@ -228,117 +202,6 @@ class ProfileSettingsPage extends StatelessWidget {
                       ),
                     );
                   }).toList(),
-                ),
-
-                const SizedBox(height: 22),
-
-                const Text(
-                  "THEATER PREFERENCES",
-                  style: TextStyle(
-                    color: Color(0xFF00E676),
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 1.1,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Container(
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF091714).withValues(alpha: 0.72),
-                    borderRadius: BorderRadius.circular(22),
-                    border: Border.all(
-                      color: const Color(0xFF00E676).withValues(alpha: 0.18),
-                    ),
-                  ),
-                  child: Column(
-                    children: [
-                      SwitchListTile(
-                        value: dolbyAtmosEnabled,
-                        onChanged: onToggleDolbyAtmos,
-                        activeColor: const Color(0xFF00E676),
-                        title: const Text(
-                          "Dolby Atmos Spatial Audio",
-                          style: TextStyle(
-                            color: Color(0xFFF0FDF4),
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                        ),
-                        subtitle: const Text(
-                          "Enable 3D theater surround sound stage",
-                          style: TextStyle(
-                            color: Color(0xFF8696A0),
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                      Divider(
-                        height: 1,
-                        color: Colors.white.withValues(alpha: 0.08),
-                      ),
-                      SwitchListTile(
-                        value: autoplayTrailers,
-                        onChanged: onToggleAutoplay,
-                        activeColor: const Color(0xFF00E676),
-                        title: const Text(
-                          "Autoplay Hero Previews",
-                          style: TextStyle(
-                            color: Color(0xFFF0FDF4),
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                          ),
-                        ),
-                        subtitle: const Text(
-                          "Automatically preview featured 4K banners",
-                          style: TextStyle(
-                            color: Color(0xFF8696A0),
-                            fontSize: 12,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _statBox(String label, String value, IconData icon) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: const Color(0xFF091714).withValues(alpha: 0.75),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(
-          color: const Color(0xFF00E676).withValues(alpha: 0.2),
-        ),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, color: const Color(0xFF00E676), size: 22),
-          const SizedBox(width: 10),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  value,
-                  style: const TextStyle(
-                    color: Color(0xFFF0FDF4),
-                    fontWeight: FontWeight.w800,
-                    fontSize: 14.5,
-                  ),
-                ),
-                Text(
-                  label,
-                  style: const TextStyle(
-                    color: Color(0xFF8696A0),
-                    fontSize: 11.5,
-                  ),
                 ),
               ],
             ),
