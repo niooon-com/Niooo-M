@@ -53,8 +53,9 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen> {
     "kwa24xVPj7FOVWm",
   };
 
-  bool _hasDismissedWelcome = false;
+  bool _hasDismissedWelcome = true; // Direct movie platform access without mandatory login
   bool _isSyncingStreamtape = false;
+  bool _isFullScreenAdminOpen = false;
   int _activeNavIndex = 0; // 0: Home, 1: Explore, 2: Watchlist, 3: Profile
   String? _activePlayingMovieId;
 
@@ -65,6 +66,7 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen> {
   @override
   void initState() {
     super.initState();
+    AuthBridgeService.instance.init();
     _movies = List<MovieItem>.from(MovieCatalogData.initialMovies);
     _syncFromStreamtapeAccount(forceRefresh: false);
   }
@@ -92,7 +94,25 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen> {
 
   void _openMoviePlayer(MovieItem movie) {
     setState(() {
+      _isFullScreenAdminOpen = false;
       _activePlayingMovieId = movie.id;
+    });
+  }
+
+  void _upsertMovieLocally(MovieItem updatedMovie) {
+    setState(() {
+      final idx = _movies.indexWhere((m) => m.id == updatedMovie.id);
+      if (idx >= 0) {
+        _movies[idx] = updatedMovie;
+      } else {
+        _movies = [updatedMovie, ..._movies];
+      }
+    });
+  }
+
+  void _deleteMovieLocally(String movieId) {
+    setState(() {
+      _movies = _movies.where((m) => m.id != movieId).toList();
     });
   }
 
@@ -137,12 +157,14 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen> {
     final trimmed = commentText.trim();
     if (trimmed.isEmpty) return;
 
+    final user = AuthBridgeService.instance.user;
     final newComment = MovieComment(
       id: "c_${DateTime.now().millisecondsSinceEpoch}",
-      authorName: "Raihan Cinema",
-      authorHandle: "@niooo_member",
-      avatarUrl:
-          "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80",
+      authorName: user?.displayName ?? "Cinema Viewer",
+      authorHandle: user?.handle ?? "@niooo_viewer",
+      avatarUrl: user?.avatarUrl.isNotEmpty == true
+          ? user!.avatarUrl
+          : "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80",
       comment: trimmed,
       timeAgo: "Just now",
       likes: 1,
@@ -171,7 +193,8 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen> {
   @override
   Widget build(BuildContext context) {
     final activeMovie = _activePlayingMovie;
-    final bool hideBottomNav = !_hasDismissedWelcome || activeMovie != null;
+    final bool hideBottomNav =
+        !_hasDismissedWelcome || activeMovie != null || _isFullScreenAdminOpen;
 
     return Scaffold(
       backgroundColor: const Color(0xFF030706),
@@ -246,27 +269,42 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen> {
                     onGetStarted: () =>
                         setState(() => _hasDismissedWelcome = true),
                   )
-                : (activeMovie != null
-                    ? MoviePlayerPage(
-                        movie: activeMovie,
-                        allMovies: _movies,
-                        isLiked: _likedMovieIds.contains(activeMovie.id),
-                        isBookmarked: _watchlistIds.contains(activeMovie.id),
-                        onBack: () =>
-                            setState(() => _activePlayingMovieId = null),
-                        onToggleLike: () => _toggleLikeMovie(activeMovie.id),
-                        onToggleBookmark: () =>
-                            _toggleWatchlist(activeMovie.id),
-                        onShareMovie: () =>
-                            _incrementShareCount(activeMovie.id),
-                        onAddComment: (comment) =>
-                            _addCommentToMovie(activeMovie.id, comment),
-                        onSelectOtherMovie: (nextMovie) =>
-                            _openMoviePlayer(nextMovie),
-                        onUpdateProgress: (ratio) =>
-                            _updateMovieProgress(activeMovie.id, ratio),
+                : _isFullScreenAdminOpen
+                    ? FullScreenAdminPanelPage(
+                        movies: _movies,
+                        adminEmail: AuthBridgeService.instance.user?.email ??
+                            "mdsaiqulislamraihan72@gmail.com",
+                        onClose: () =>
+                            setState(() => _isFullScreenAdminOpen = false),
+                        onRefreshCatalog: () =>
+                            _syncFromStreamtapeAccount(forceRefresh: true),
+                        onPlayMovie: _openMoviePlayer,
+                        onUpdateMovieLocally: _upsertMovieLocally,
+                        onDeleteMovieLocally: _deleteMovieLocally,
                       )
-                    : _buildTabContent()),
+                    : (activeMovie != null
+                        ? MoviePlayerPage(
+                            movie: activeMovie,
+                            allMovies: _movies,
+                            isLiked: _likedMovieIds.contains(activeMovie.id),
+                            isBookmarked:
+                                _watchlistIds.contains(activeMovie.id),
+                            onBack: () =>
+                                setState(() => _activePlayingMovieId = null),
+                            onToggleLike: () =>
+                                _toggleLikeMovie(activeMovie.id),
+                            onToggleBookmark: () =>
+                                _toggleWatchlist(activeMovie.id),
+                            onShareMovie: () =>
+                                _incrementShareCount(activeMovie.id),
+                            onAddComment: (comment) =>
+                                _addCommentToMovie(activeMovie.id, comment),
+                            onSelectOtherMovie: (nextMovie) =>
+                                _openMoviePlayer(nextMovie),
+                            onUpdateProgress: (ratio) =>
+                                _updateMovieProgress(activeMovie.id, ratio),
+                          )
+                        : _buildTabContent()),
           ),
 
           // Floating Liquid Glass Bottom Bar when browsing catalog tabs
@@ -305,6 +343,7 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen> {
       final watchedCount =
           _movies.where((m) => m.watchProgress > 0.05).length;
       return ProfileSettingsPage(
+        movies: _movies,
         displayName: "Raihan Cinema",
         handle: "@niooo_m",
         membershipTier: "IMAX 4K VIP",
@@ -317,6 +356,8 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen> {
         onToggleDolbyAtmos: (v) => setState(() => _dolbyAtmosEnabled = v),
         onToggleAutoplay: (v) => setState(() => _autoplayTrailers = v),
         onReturnToWelcome: () => setState(() => _hasDismissedWelcome = false),
+        onOpenFullScreenAdminPanel: () =>
+            setState(() => _isFullScreenAdminOpen = true),
       );
     }
 
