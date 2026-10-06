@@ -46,13 +46,15 @@ class NioooCinemaMainScreen extends StatefulWidget {
 
 class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen> {
   late List<MovieItem> _movies;
-  final Set<String> _likedMovieIds = {"mov_solaris_protocol"};
+  final Set<String> _likedMovieIds = {"Zk2Rbvkpl9tqzjD", "MPDylDpxp9h0Jr"};
   final Set<String> _watchlistIds = {
-    "mov_solaris_protocol",
-    "mov_emerald_syndicate",
+    "Zk2Rbvkpl9tqzjD",
+    "MPDylDpxp9h0Jr",
+    "kwa24xVPj7FOVWm",
   };
 
   bool _hasDismissedWelcome = false;
+  bool _isSyncingStreamtape = false;
   int _activeNavIndex = 0; // 0: Home, 1: Explore, 2: Watchlist, 3: Profile
   String? _activePlayingMovieId;
 
@@ -64,6 +66,20 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen> {
   void initState() {
     super.initState();
     _movies = List<MovieItem>.from(MovieCatalogData.initialMovies);
+    _syncFromStreamtapeAccount(forceRefresh: false);
+  }
+
+  Future<void> _syncFromStreamtapeAccount({bool forceRefresh = true}) async {
+    if (_isSyncingStreamtape) return;
+    setState(() => _isSyncingStreamtape = true);
+    final liveCatalog = await MovieCatalogData.fetchLiveStreamtapeCatalog(
+      forceRefresh: forceRefresh,
+    );
+    if (!mounted) return;
+    setState(() {
+      _movies = liveCatalog;
+      _isSyncingStreamtape = false;
+    });
   }
 
   MovieItem? get _activePlayingMovie {
@@ -307,9 +323,12 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen> {
     return HomeMoviesPage(
       movies: _movies,
       watchlistIds: _watchlistIds,
+      isSyncingStreamtape: _isSyncingStreamtape,
       onPlayMovie: _openMoviePlayer,
       onToggleWatchlist: _toggleWatchlist,
       onOpenSearch: () => setState(() => _activeNavIndex = 1),
+      onRefreshStreamtape: () =>
+          _syncFromStreamtapeAccount(forceRefresh: true),
     );
   }
 }
