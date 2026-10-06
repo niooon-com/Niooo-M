@@ -5,7 +5,6 @@ import "../widgets/glass_container.dart";
 class WatchlistPage extends StatelessWidget {
   final List<MovieItem> movies;
   final Set<String> watchlistIds;
-  final ValueChanged<MovieItem> onSelectMovie;
   final ValueChanged<MovieItem> onPlayMovie;
   final ValueChanged<String> onToggleWatchlist;
   final VoidCallback onExploreMovies;
@@ -14,7 +13,6 @@ class WatchlistPage extends StatelessWidget {
     super.key,
     required this.movies,
     required this.watchlistIds,
-    required this.onSelectMovie,
     required this.onPlayMovie,
     required this.onToggleWatchlist,
     required this.onExploreMovies,
@@ -93,24 +91,12 @@ class WatchlistPage extends StatelessWidget {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Container(
-                            width: 68,
-                            height: 68,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF091814),
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: const Color(0xFF00E676)
-                                    .withValues(alpha: 0.4),
-                              ),
-                            ),
-                            child: const Icon(
-                              Icons.bookmark_add_outlined,
-                              color: Color(0xFF00E676),
-                              size: 30,
-                            ),
+                          const Icon(
+                            Icons.bookmark_add_outlined,
+                            color: Color(0xFF00E676),
+                            size: 46,
                           ),
-                          const SizedBox(height: 14),
+                          const SizedBox(height: 12),
                           const Text(
                             "Your Watchlist is Empty",
                             style: TextStyle(
@@ -119,17 +105,7 @@ class WatchlistPage extends StatelessWidget {
                               fontWeight: FontWeight.bold,
                             ),
                           ),
-                          const SizedBox(height: 6),
-                          const Text(
-                            "Bookmark any movie from Home or Explore to keep your personal cinema queue ready.",
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Color(0xFF8696A0),
-                              fontSize: 13,
-                              height: 1.4,
-                            ),
-                          ),
-                          const SizedBox(height: 18),
+                          const SizedBox(height: 8),
                           GlassButton(
                             onTap: onExploreMovies,
                             borderRadius: 18,
@@ -156,7 +132,7 @@ class WatchlistPage extends StatelessWidget {
                     itemBuilder: (context, index) {
                       final movie = savedMovies[index];
                       return GestureDetector(
-                        onTap: () => onSelectMovie(movie),
+                        onTap: () => onPlayMovie(movie),
                         child: Container(
                           margin: const EdgeInsets.only(bottom: 12),
                           padding: const EdgeInsets.all(12),
@@ -184,11 +160,6 @@ class WatchlistPage extends StatelessWidget {
                                   width: 74,
                                   height: 102,
                                   fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) => Container(
-                                    width: 74,
-                                    height: 102,
-                                    color: const Color(0xFF0A1815),
-                                  ),
                                 ),
                               ),
                               const SizedBox(width: 14),
@@ -217,7 +188,7 @@ class WatchlistPage extends StatelessWidget {
                                     ),
                                     const SizedBox(height: 3),
                                     Text(
-                                      "${movie.releaseYear} · ${movie.duration} · ★ ${movie.rating}",
+                                      "${movie.releaseYear} · ${movie.viewsLabel} · ★ ${movie.rating}",
                                       style: const TextStyle(
                                         color: Color(0xFF94A3B8),
                                         fontSize: 12,
@@ -243,7 +214,7 @@ class WatchlistPage extends StatelessWidget {
                                               ),
                                               SizedBox(width: 4),
                                               Text(
-                                                "Play 4K",
+                                                "Play Now",
                                                 style: TextStyle(
                                                   color: Color(0xFF03120D),
                                                   fontWeight: FontWeight.w900,
@@ -256,7 +227,7 @@ class WatchlistPage extends StatelessWidget {
                                         const SizedBox(width: 8),
                                         GlassIconButton(
                                           icon: Icons.delete_outline_rounded,
-                                          tooltip: "Remove from Watchlist",
+                                          tooltip: "Remove",
                                           size: 34,
                                           color: const Color(0xFFFF5252),
                                           onTap: () =>
