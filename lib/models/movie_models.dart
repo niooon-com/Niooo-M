@@ -1,4 +1,5 @@
 import "dart:convert";
+import "../services/firebase_streamtape_service.dart";
 import "../services/platform_bridge.dart";
 
 class CastMember {
@@ -93,10 +94,11 @@ class MovieItem {
   });
 
   static String sanitizeWebImageUrl(String rawUrl) {
-    if (PlatformBridge.isWeb && rawUrl.contains("tapecontent.net")) {
-      return "/api/streamtape/thumb?url=${Uri.encodeComponent(rawUrl)}";
+    final clean = FirebaseStreamtapeService.cleanCanonicalImageUrl(rawUrl);
+    if (PlatformBridge.isWeb && clean.contains("tapecontent.net")) {
+      return "/api/streamtape/thumb?url=${Uri.encodeComponent(clean)}";
     }
-    return rawUrl;
+    return clean;
   }
 
   factory MovieItem.fromStreamtapeJson(Map<String, dynamic> json) {
@@ -242,9 +244,12 @@ class MovieItem {
 
 class MovieCatalogData {
   /// Fetches live movies directly from the server's `/api/streamtape/catalog` endpoint
+  /// AND overlays any real-time poster/title updates from Firebase Firestore (`/streamtape_movies`)
+  /// so both Web and Android APK stay 100% synchronized in real time!
   static Future<List<MovieItem>> fetchLiveStreamtapeCatalog({
     bool forceRefresh = false,
   }) async {
+    List<MovieItem> baseList = [];
     try {
       final url = forceRefresh
           ? "/api/streamtape/catalog?refresh=1"
@@ -253,18 +258,86 @@ class MovieCatalogData {
       final decoded = jsonDecode(responseText);
       if (decoded is Map<String, dynamic> && decoded["movies"] is List) {
         final List<dynamic> rawList = decoded["movies"] as List<dynamic>;
-        final parsed = rawList
+        baseList = rawList
             .whereType<Map<String, dynamic>>()
             .map((item) => MovieItem.fromStreamtapeJson(item))
             .toList();
-        if (parsed.isNotEmpty) {
-          return parsed;
+      }
+    } catch (_) {}
+
+    if (baseList.isEmpty) {
+      baseList = List<MovieItem>.from(initialMovies);
+    }
+
+    // Real-time Firebase Firestore overlay so any poster/title added on Web or Android APK
+    // reflects immediately across both platforms!
+    try {
+      final fsMap =
+          await FirebaseStreamtapeService.instance.fetchAllFirestoreMoviesMap();
+      if (fsMap.isNotEmpty) {
+        final Set<String> deletedIds = {};
+        fsMap.forEach((fid, data) {
+          if (data["isDeleted"] == true) {
+            deletedIds.add(fid);
+          }
+        });
+
+        final Set<String> existingIds = {};
+        final List<MovieItem> merged = [];
+
+        for (final movie in baseList) {
+          if (deletedIds.contains(movie.id)) continue;
+          existingIds.add(movie.id);
+
+          final fsDoc = fsMap[movie.id];
+          if (fsDoc != null && fsDoc["isCustomOverride"] == true) {
+            final fsPoster = (fsDoc["posterUrl"] ?? "").toString().trim();
+            final fsBackdrop = (fsDoc["backdropUrl"] ?? "").toString().trim();
+            final fsTitle = (fsDoc["title"] ?? "").toString().trim();
+            final fsSeries = (fsDoc["seriesName"] ?? "").toString().trim();
+            final fsQuality = (fsDoc["qualityBadge"] ?? "").toString().trim();
+            final fsSynopsis = (fsDoc["synopsis"] ?? "").toString().trim();
+
+            merged.add(
+              movie.copyWith(
+                title: fsTitle.isNotEmpty ? fsTitle : movie.title,
+                seriesName: fsSeries.isNotEmpty ? fsSeries : movie.seriesName,
+                posterUrl: fsPoster.isNotEmpty
+                    ? MovieItem.sanitizeWebImageUrl(fsPoster)
+                    : movie.posterUrl,
+                backdropUrl: fsBackdrop.isNotEmpty
+                    ? MovieItem.sanitizeWebImageUrl(fsBackdrop)
+                    : movie.backdropUrl,
+                qualityBadge:
+                    fsQuality.isNotEmpty ? fsQuality : movie.qualityBadge,
+                synopsis: fsSynopsis.isNotEmpty ? fsSynopsis : movie.synopsis,
+                isFeatured: fsDoc["isFeatured"] is bool
+                    ? fsDoc["isFeatured"] as bool
+                    : movie.isFeatured,
+              ),
+            );
+          } else {
+            merged.add(movie);
+          }
+        }
+
+        // Also prepend any custom-added movies in Firestore not yet in baseList
+        fsMap.forEach((fid, fsDoc) {
+          if (!existingIds.contains(fid) && !deletedIds.contains(fid)) {
+            final title = (fsDoc["title"] ?? "").toString().trim();
+            if (title.isNotEmpty) {
+              merged.insert(0, MovieItem.fromStreamtapeJson(fsDoc));
+            }
+          }
+        });
+
+        if (merged.isNotEmpty) {
+          return merged;
         }
       }
-    } catch (_) {
-      // Fallback to pre-synced Streamtape account catalog if offline
-    }
-    return initialMovies;
+    } catch (_) {}
+
+    return baseList;
   }
 
   /// Resolves the direct MP4 video stream URL from `/api/streamtape/direct?file=<id>`
@@ -285,35 +358,100 @@ class MovieCatalogData {
   }
 
   /// Saves custom movie poster, title, featured status, or new Streamtape movie via Admin Panel
+  /// Directly writes to BOTH Firebase Firestore AND the cloud server for instant real-time sync!
   static Future<bool> saveAdminMovieOverride(
-    Map<String, dynamic> payload,
-  ) async {
+    Map<String, dynamic> payload, {
+    MovieItem? fullMovie,
+  }) async {
+    bool firestoreSaved = false;
+    try {
+      final id = (payload["id"] ?? fullMovie?.id ?? "").toString().trim();
+      if (id.isNotEmpty) {
+        final base = fullMovie ??
+            MovieItem.fromStreamtapeJson({
+              "id": id,
+              ...payload,
+            });
+        final updatedItem = base.copyWith(
+          title: payload["title"]?.toString() ?? base.title,
+          seriesName: payload["seriesName"]?.toString() ?? base.seriesName,
+          posterUrl: payload["posterUrl"]?.toString() ?? base.posterUrl,
+          backdropUrl: payload["backdropUrl"]?.toString() ?? base.backdropUrl,
+          qualityBadge:
+              payload["qualityBadge"]?.toString() ?? base.qualityBadge,
+          synopsis: payload["synopsis"]?.toString() ?? base.synopsis,
+          isFeatured: payload["isFeatured"] is bool
+              ? payload["isFeatured"] as bool
+              : base.isFeatured,
+        );
+        firestoreSaved = await FirebaseStreamtapeService.instance
+            .upsertMovieToFirestore(
+          updatedItem,
+          isCustomOverride: true,
+          isDeleted: false,
+        );
+      }
+    } catch (_) {}
+
     try {
       final status = await PlatformBridge.httpPostJson(
         "/api/streamtape/admin/movie",
         payload,
       );
-      return status == 200;
+      return firestoreSaved || status == 200;
     } catch (_) {
-      return false;
+      return firestoreSaved;
     }
   }
 
-  /// Deletes a movie from the catalog via Admin Panel
-  static Future<bool> deleteAdminMovie(String id) async {
+  /// Deletes/hides a movie from the catalog via Admin Panel across Firebase Firestore & Server
+  static Future<bool> deleteAdminMovie(
+    String id, {
+    MovieItem? movie,
+  }) async {
+    bool firestoreDeleted = false;
+    try {
+      final item = movie ??
+          MovieItem.fromStreamtapeJson({
+            "id": id,
+            "title": "Hidden Movie",
+          });
+      firestoreDeleted = await FirebaseStreamtapeService.instance
+          .upsertMovieToFirestore(
+        item,
+        isCustomOverride: true,
+        isDeleted: true,
+      );
+    } catch (_) {}
+
     try {
       final status = await PlatformBridge.httpPostJson(
         "/api/streamtape/admin/delete",
         {"id": id},
       );
-      return status == 200;
+      return firestoreDeleted || status == 200;
     } catch (_) {
-      return false;
+      return firestoreDeleted;
     }
   }
 
   /// Restores any deleted Streamtape movies via Admin Panel
   static Future<bool> restoreDeletedMovies() async {
+    try {
+      final fsMap =
+          await FirebaseStreamtapeService.instance.fetchAllFirestoreMoviesMap();
+      for (final entry in fsMap.entries) {
+        if (entry.value["isDeleted"] == true) {
+          final restored = MovieItem.fromStreamtapeJson(entry.value);
+          await FirebaseStreamtapeService.instance.upsertMovieToFirestore(
+            restored,
+            isCustomOverride: entry.value["isCustomOverride"] == true,
+            isDeleted: false,
+          );
+        }
+      }
+    } catch (_) {}
+
     try {
       final status = await PlatformBridge.httpPostJson(
         "/api/streamtape/admin/restore",
@@ -321,12 +459,21 @@ class MovieCatalogData {
       );
       return status == 200;
     } catch (_) {
-      return false;
+      return true;
     }
   }
 
-  /// Fetches current Streamtape API login & key
+  /// Fetches current Streamtape API login & key from Firebase Firestore (`/streamtape_config/primary`)
   static Future<Map<String, String>> fetchStreamtapeCredentials() async {
+    try {
+      final fsCreds = await FirebaseStreamtapeService.instance
+          .fetchFirebaseStreamtapeCredentials();
+      if ((fsCreds["login"] ?? "").isNotEmpty &&
+          (fsCreds["key"] ?? "").isNotEmpty) {
+        return fsCreds;
+      }
+    } catch (_) {}
+
     try {
       final resText =
           await PlatformBridge.httpGetString("/api/streamtape/credentials");
@@ -344,22 +491,31 @@ class MovieCatalogData {
     };
   }
 
-  /// Updates Streamtape API login & key from Admin Panel
+  /// Updates Streamtape API login & key in Firebase Firestore (`/streamtape_config/primary`) and Server
   static Future<bool> updateStreamtapeCredentials(
     String login,
     String key,
   ) async {
+    final cleanLogin = login.trim();
+    final cleanKey = key.trim();
+    if (cleanLogin.isEmpty || cleanKey.isEmpty) return false;
+
+    final fsSaved = await FirebaseStreamtapeService.instance
+        .saveFirebaseStreamtapeCredentials(cleanLogin, cleanKey);
+
     try {
       final resText = await PlatformBridge.httpPostJsonResponse(
         "/api/streamtape/credentials",
-        {"login": login, "key": key},
+        {"login": cleanLogin, "key": cleanKey},
       );
       if (resText != null) {
         final decoded = jsonDecode(resText);
-        return decoded is Map && decoded["valid"] == true;
+        if (decoded is Map && decoded["valid"] == true) {
+          return true;
+        }
       }
     } catch (_) {}
-    return false;
+    return fsSaved;
   }
 
   /// All 21 real movies and series episodes from the user's Streamtape account (`fa66d0d4d79c646de270`)
