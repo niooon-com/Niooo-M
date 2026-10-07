@@ -736,16 +736,51 @@ class PlatformBridge {
     return jsonEncode({"ok": true, "valid": true});
   }
 
+  static bool _diskCacheLoaded = false;
+
+  static void _ensureDiskCacheLoaded() {
+    if (_diskCacheLoaded) return;
+    _diskCacheLoaded = true;
+    try {
+      final cacheFile =
+          File("${Directory.systemTemp.path}/niooo_m_local_cache_v2.json");
+      if (cacheFile.existsSync()) {
+        final raw = cacheFile.readAsStringSync();
+        if (raw.trim().startsWith("{")) {
+          final decoded = jsonDecode(raw);
+          if (decoded is Map) {
+            decoded.forEach((k, v) {
+              if (k != null && v != null) {
+                _memoryStorage[k.toString()] = v.toString();
+              }
+            });
+          }
+        }
+      }
+    } catch (_) {}
+  }
+
+  static void _flushDiskCache() {
+    try {
+      final cacheFile =
+          File("${Directory.systemTemp.path}/niooo_m_local_cache_v2.json");
+      cacheFile.writeAsStringSync(jsonEncode(_memoryStorage), flush: true);
+    } catch (_) {}
+  }
+
   static String? getLocalStorage(String key) {
+    _ensureDiskCacheLoaded();
     return _memoryStorage[key];
   }
 
   static void setLocalStorage(String key, String? value) {
+    _ensureDiskCacheLoaded();
     if (value == null) {
       _memoryStorage.remove(key);
     } else {
       _memoryStorage[key] = value;
     }
+    _flushDiskCache();
   }
 
   static void listenBridgeSync(void Function(String json) onSync) {}
