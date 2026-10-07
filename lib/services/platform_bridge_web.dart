@@ -43,6 +43,31 @@ class PlatformBridge {
     return null;
   }
 
+  static Future<String?> httpGetDirectUrl(String url) async {
+    try {
+      return await html.HttpRequest.getString(url);
+    } catch (_) {
+      return null;
+    }
+  }
+
+  static Future<bool> httpPatchDirectJson(
+    String url,
+    Map<String, dynamic> payload,
+  ) async {
+    try {
+      final req = await html.HttpRequest.request(
+        url,
+        method: "PATCH",
+        requestHeaders: {"Content-Type": "application/json"},
+        sendData: jsonEncode(payload),
+      );
+      return (req.status ?? 0) >= 200 && (req.status ?? 0) < 300;
+    } catch (_) {
+      return false;
+    }
+  }
+
   static String? getLocalStorage(String key) {
     try {
       return html.window.localStorage[key];
