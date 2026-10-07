@@ -234,15 +234,55 @@ class PlatformBridge {
     return false;
   }
 
+  static Object? _wakeLockSentinel;
+
+  static void setScreenWakelock(bool enable) {
+    try {
+      final nav = html.window.navigator;
+      final wakeLock = js_util.getProperty<Object?>(nav, "wakeLock");
+      if (wakeLock != null) {
+        if (enable) {
+          js_util
+              .promiseToFuture<Object?>(
+                js_util.callMethod<Object>(wakeLock, "request", ["screen"]),
+              )
+              .then((sentinel) => _wakeLockSentinel = sentinel)
+              .catchError((_) => null);
+        } else if (_wakeLockSentinel != null) {
+          js_util.callMethod<Object?>(_wakeLockSentinel!, "release", []);
+          _wakeLockSentinel = null;
+        }
+      }
+    } catch (_) {}
+  }
+
+  static void enterNativeFullscreen() {
+    setScreenWakelock(true);
+    try {
+      html.document.documentElement?.requestFullscreen();
+    } catch (_) {}
+  }
+
+  static void exitNativeFullscreen() {
+    try {
+      if (html.document.fullscreenElement != null) {
+        html.document.exitFullscreen();
+      }
+    } catch (_) {}
+  }
+
   static void requestVideoFullscreen(Object? videoObj) {
     if (videoObj is html.VideoElement) {
       try {
         videoObj.requestFullscreen();
       } catch (_) {}
+    } else {
+      enterNativeFullscreen();
     }
   }
 
   static void disposeVideo(Object? videoObj) {
+    setScreenWakelock(false);
     if (videoObj is html.VideoElement) {
       videoObj.pause();
       videoObj.src = "";
