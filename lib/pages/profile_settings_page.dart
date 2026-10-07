@@ -1360,16 +1360,19 @@ class _FullScreenAdminPanelPageState extends State<FullScreenAdminPanelPage> {
                                 );
 
                                 widget.onUpdateMovieLocally(updated);
-                                await MovieCatalogData.saveAdminMovieOverride({
-                                  "id": movie.id,
-                                  "title": newTitle,
-                                  "seriesName": newSeries,
-                                  "posterUrl": newPoster,
-                                  "backdropUrl": newBackdrop,
-                                  "qualityBadge": newQuality,
-                                  "synopsis": newSynopsis,
-                                  "isFeatured": isFeatured,
-                                });
+                                await MovieCatalogData.saveAdminMovieOverride(
+                                  {
+                                    "id": movie.id,
+                                    "title": newTitle,
+                                    "seriesName": newSeries,
+                                    "posterUrl": newPoster,
+                                    "backdropUrl": newBackdrop,
+                                    "qualityBadge": newQuality,
+                                    "synopsis": newSynopsis,
+                                    "isFeatured": isFeatured,
+                                  },
+                                  fullMovie: updated,
+                                );
 
                                 if (applyPosterToWholeSeries &&
                                     movie.seriesName.isNotEmpty) {
@@ -1380,20 +1383,23 @@ class _FullScreenAdminPanelPageState extends State<FullScreenAdminPanelPage> {
                                             movie.seriesName.toLowerCase(),
                                   );
                                   for (final sib in siblings) {
-                                    widget.onUpdateMovieLocally(
-                                      sib.copyWith(posterUrl: newPoster),
-                                    );
+                                    final sibUpdated =
+                                        sib.copyWith(posterUrl: newPoster);
+                                    widget.onUpdateMovieLocally(sibUpdated);
                                     await MovieCatalogData
-                                        .saveAdminMovieOverride({
-                                      "id": sib.id,
-                                      "posterUrl": newPoster,
-                                    });
+                                        .saveAdminMovieOverride(
+                                      {
+                                        "id": sib.id,
+                                        "posterUrl": newPoster,
+                                      },
+                                      fullMovie: sibUpdated,
+                                    );
                                   }
                                 }
 
                                 if (ctx.mounted) Navigator.of(ctx).pop();
                                 _showToast(
-                                    "Poster & details saved for '$newTitle'!");
+                                    "Poster & details synced to Firebase for '$newTitle'!");
                               },
                               borderRadius: 18,
                               padding:
@@ -1489,18 +1495,21 @@ class _FullScreenAdminPanelPageState extends State<FullScreenAdminPanelPage> {
 
     widget.onUpdateMovieLocally(newMovie);
 
-    await MovieCatalogData.saveAdminMovieOverride({
-      "id": cleanId,
-      "title": title,
-      "seriesName": seriesName,
-      "posterUrl": finalPoster,
-      "backdropUrl": finalBackdrop,
-      "releaseYear": releaseYear,
-      "qualityBadge": newMovie.qualityBadge,
-      "synopsis": synopsis,
-      "isFeatured": _isFeaturedNew,
-      "isCustomAdded": true,
-    });
+    await MovieCatalogData.saveAdminMovieOverride(
+      {
+        "id": cleanId,
+        "title": title,
+        "seriesName": seriesName,
+        "posterUrl": finalPoster,
+        "backdropUrl": finalBackdrop,
+        "releaseYear": releaseYear,
+        "qualityBadge": newMovie.qualityBadge,
+        "synopsis": synopsis,
+        "isFeatured": _isFeaturedNew,
+        "isCustomAdded": true,
+      },
+      fullMovie: newMovie,
+    );
 
     if (!mounted) return;
     setState(() {
@@ -2030,13 +2039,16 @@ class _FullScreenAdminPanelPageState extends State<FullScreenAdminPanelPage> {
                                 label: movie.isFeatured ? "Featured" : "Feature",
                                 onTap: () async {
                                   final toggled = !movie.isFeatured;
-                                  widget.onUpdateMovieLocally(
-                                    movie.copyWith(isFeatured: toggled),
+                                  final updatedMovie =
+                                      movie.copyWith(isFeatured: toggled);
+                                  widget.onUpdateMovieLocally(updatedMovie);
+                                  await MovieCatalogData.saveAdminMovieOverride(
+                                    {
+                                      "id": movie.id,
+                                      "isFeatured": toggled,
+                                    },
+                                    fullMovie: updatedMovie,
                                   );
-                                  await MovieCatalogData.saveAdminMovieOverride({
-                                    "id": movie.id,
-                                    "isFeatured": toggled,
-                                  });
                                   _showToast(
                                     toggled
                                         ? "Added '${movie.title}' to Featured Hero!"
@@ -2051,7 +2063,9 @@ class _FullScreenAdminPanelPageState extends State<FullScreenAdminPanelPage> {
                                 onTap: () async {
                                   widget.onDeleteMovieLocally(movie.id);
                                   await MovieCatalogData.deleteAdminMovie(
-                                      movie.id);
+                                    movie.id,
+                                    movie: movie,
+                                  );
                                   _showToast(
                                       "Removed '${movie.title}' from active catalog.");
                                 },
@@ -2233,7 +2247,7 @@ class _FullScreenAdminPanelPageState extends State<FullScreenAdminPanelPage> {
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    "Streamtape Cloud API Configuration",
+                    "Firebase + Streamtape Cloud API Sync",
                     style: TextStyle(
                       color: Color(0xFFF0FDF4),
                       fontSize: 16.5,
@@ -2245,7 +2259,7 @@ class _FullScreenAdminPanelPageState extends State<FullScreenAdminPanelPage> {
             ),
             const SizedBox(height: 6),
             const Text(
-              "Connected to your Streamtape account. All movies in your account are automatically fetched, organized, and streamed.",
+              "Stored inside Firebase Firestore (/streamtape_config/primary & /streamtape_movies). Real-time synced across both Website and Android APK.",
               style: TextStyle(color: Color(0xFF94A3B8), fontSize: 12),
             ),
             const SizedBox(height: 16),
