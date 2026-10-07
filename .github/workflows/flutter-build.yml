@@ -109,9 +109,10 @@ jobs:
           <manifest xmlns:android="http://schemas.android.com/apk/res/android"
               xmlns:tools="http://schemas.android.com/tools">
 
-              <!-- Network & Browser Permissions -->
+              <!-- Network, Screen WakeLock & Browser Permissions -->
               <uses-permission android:name="android.permission.INTERNET" />
               <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-permission android:name="android.permission.WAKE_LOCK" />
 
               <!-- File Manager / File Picker Storage & Media Permissions -->
               <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
@@ -154,6 +155,7 @@ jobs:
                       android:exported="true"
                       android:launchMode="singleTop"
                       android:taskAffinity=""
+                      android:keepScreenOn="true"
                       android:theme="@style/LaunchTheme"
                       android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode"
                       android:hardwareAccelerated="true"
