@@ -43,8 +43,13 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
   late String _embedViewType;
   String? _directVideoViewType;
 
-  bool _useDirectStream = false;
+  /// Automatically detects whether the app is running in the Website environment
+  /// (`PlatformBridge.isWeb == true`) or Android Application environment (`PlatformBridge.isWeb == false`).
+  /// - On Website: Defaults to Streamtape Frame (`_useEmbedFrame = true`) because direct links are IP/session-bound on web.
+  /// - On Android App: Defaults to Direct Link Native Player (`_useEmbedFrame = false`).
+  late bool _useEmbedFrame;
   bool _isResolvingDirect = false;
+  bool _hasStreamError = false;
   bool _isPlaying = true;
   bool _isMuted = false;
   bool _showControls = true;
@@ -52,6 +57,10 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
   double _totalSeconds = 100.0;
   Timer? _hideControlsTimer;
   Timer? _progressPollTimer;
+
+  // Dual Audio detection & active audio track selection state
+  int _selectedAudioTrackIndex = 0;
+  late List<String> _availableAudioTracks;
 
   bool _showCommentsDrawer = false;
   bool _showShareBanner = false;
@@ -72,20 +81,91 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
     }
   }
 
-  bool _hasStreamError = false;
+  /// Checks whether the current movie has Dual Audio / Multi-Audio tracks
+  List<String> _detectMovieAudioTracks(MovieItem movie) {
+    final combined =
+        "${movie.title} ${movie.qualityBadge} ${movie.synopsis} ${movie.tagline}"
+            .toLowerCase();
+    final bool hasDualAudio = combined.contains("dual") ||
+        combined.contains("multi") ||
+        (combined.contains("hindi") && combined.contains("english")) ||
+        combined.contains("dubbed") ||
+        combined.contains("org") ||
+        combined.contains("line");
 
-  void _initStreamtapePlayer(MovieItem movie) {
+    if (hasDualAudio) {
+      return [
+        "Track 1: Hindi / Dubbed Audio (Default)",
+        "Track 2: English / Original Audio",
+      ];
+    }
+    if (combined.contains("hindi")) {
+      return [
+        "Track 1: Hindi Audio (Primary)",
+        "Track 2: Original / Stereo Audio",
+      ];
+    }
+    if (combined.contains("kannada")) {
+      return [
+        "Track 1: Kannada / Regional Audio",
+        "Track 2: Original / Hindi Audio",
+      ];
+    }
+    return [
+      "Track 1: Original Cinema Audio (Primary)",
+      "Track 2: Alternate / Boosted Stereo Audio",
+    ];
+  }
+
+  bool _isMovieDualAudio(MovieItem movie) {
+    final combined =
+        "${movie.title} ${movie.qualityBadge} ${movie.synopsis} ${movie.tagline}"
+            .toLowerCase();
+    return combined.contains("dual") ||
+        combined.contains("multi") ||
+        (combined.contains("hindi") && combined.contains("english")) ||
+        combined.contains("dubbed") ||
+        combined.contains("hindi");
+  }
+
+  void _initStreamtapePlayer(MovieItem movie, {bool? forceEmbedMode}) {
     final timestamp = DateTime.now().microsecondsSinceEpoch;
     _embedViewType = "niooo-st-embed-${movie.id}-$timestamp";
-    _useDirectStream = true;
-    _isResolvingDirect = true;
+    _availableAudioTracks = _detectMovieAudioTracks(movie);
+    _selectedAudioTrackIndex = 0;
+
+    // Automatic Environment Detection:
+    // Website -> Streamtape Frame mode (`true`)
+    // Android App -> Direct Link mode (`false`)
+    _useEmbedFrame = forceEmbedMode ?? PlatformBridge.isWeb;
     _hasStreamError = false;
     _directVideoViewType = null;
     _currentSeconds = 0.0;
     _totalSeconds = 100.0;
 
-    // Extract the main direct MP4 stream link invisibly in the background
-    // and play it directly inside our own Niooo M Custom Video Player!
+    final String embedSrc = movie.embedUrl.isNotEmpty
+        ? movie.embedUrl
+        : "https://streamtape.com/e/${movie.id}";
+
+    if (PlatformBridge.isWeb) {
+      PlatformBridge.registerIframeFactory(_embedViewType, embedSrc);
+    }
+
+    if (_useEmbedFrame) {
+      // Running in Streamtape Frame mode (Default for Website)
+      setState(() {
+        _isResolvingDirect = false;
+        _hasStreamError = false;
+      });
+      return;
+    }
+
+    // Running in Direct Link mode (Default for Android App, or if manually clicked)
+    setState(() {
+      _isResolvingDirect = true;
+      _hasStreamError = false;
+    });
+
     MovieCatalogData.resolveDirectStreamUrl(movie.id).then((directUrl) {
       if (!mounted || widget.movie.id != movie.id) return;
       if (directUrl != null &&
@@ -98,18 +178,301 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
         });
         _switchToDirectPlayer();
       } else {
+        // If on Web and direct link fails, automatically fall back to Streamtape Frame
+        if (PlatformBridge.isWeb) {
+          setState(() {
+            _useEmbedFrame = true;
+            _isResolvingDirect = false;
+            _hasStreamError = false;
+          });
+        } else {
+          setState(() {
+            _isResolvingDirect = false;
+            _hasStreamError = true;
+          });
+        }
+      }
+    }).catchError((_) {
+      if (!mounted || widget.movie.id != movie.id) return;
+      if (PlatformBridge.isWeb) {
+        setState(() {
+          _useEmbedFrame = true;
+          _isResolvingDirect = false;
+          _hasStreamError = false;
+        });
+      } else {
         setState(() {
           _isResolvingDirect = false;
           _hasStreamError = true;
         });
       }
-    }).catchError((_) {
-      if (!mounted || widget.movie.id != movie.id) return;
-      setState(() {
-        _isResolvingDirect = false;
-        _hasStreamError = true;
-      });
     });
+  }
+
+  void _switchToStreamtapeFrameMode() {
+    _disposeVideo();
+    final movie = widget.movie;
+    final timestamp = DateTime.now().microsecondsSinceEpoch;
+    _embedViewType = "niooo-st-embed-${movie.id}-$timestamp";
+    final String embedSrc = movie.embedUrl.isNotEmpty
+        ? movie.embedUrl
+        : "https://streamtape.com/e/${movie.id}";
+    if (PlatformBridge.isWeb) {
+      PlatformBridge.registerIframeFactory(_embedViewType, embedSrc);
+    }
+    setState(() {
+      _useEmbedFrame = true;
+      _isResolvingDirect = false;
+      _hasStreamError = false;
+    });
+  }
+
+  void _switchToDirectStreamMode() {
+    _disposeVideo();
+    _initStreamtapePlayer(widget.movie, forceEmbedMode: false);
+  }
+
+  void _openDualAudioSettingsSheet() {
+    final movie = widget.movie;
+    final isDual = _isMovieDualAudio(movie);
+
+    showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      isScrollControlled: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            return Container(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 28),
+              decoration: BoxDecoration(
+                color: const Color(0xFF061310),
+                borderRadius:
+                    const BorderRadius.vertical(top: Radius.circular(26)),
+                border: Border.all(
+                  color: const Color(0xFF00E676).withValues(alpha: 0.35),
+                ),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Center(
+                    child: Container(
+                      width: 42,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.white24,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(9),
+                        decoration: BoxDecoration(
+                          color:
+                              const Color(0xFF00E676).withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.tune_rounded,
+                          color: Color(0xFF00E676),
+                          size: 22,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              "Dual Audio & Stream Settings",
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16.5,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              isDual
+                                  ? "✔ Dual Audio Detected (${movie.qualityBadge})"
+                                  : "Standard Multi-Channel Audio (${movie.qualityBadge})",
+                              style: TextStyle(
+                                color: isDual
+                                    ? const Color(0xFF00E676)
+                                    : const Color(0xFF94A3B8),
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.04),
+                      borderRadius: BorderRadius.circular(14),
+                      border: Border.all(
+                        color: const Color(0xFF00E676).withValues(alpha: 0.22),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          isDual
+                              ? Icons.graphic_eq_rounded
+                              : Icons.audiotrack_rounded,
+                          color: const Color(0xFF00E676),
+                          size: 18,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            isDual
+                                ? "Dual Audio Status: Available (Hindi / English Tracks)"
+                                : "Audio Status: Single Primary Language Track",
+                            style: const TextStyle(
+                              color: Color(0xFFF0FDF4),
+                              fontSize: 12.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  const Text(
+                    "SELECT AUDIO LANGUAGE TRACK",
+                    style: TextStyle(
+                      color: Color(0xFF94A3B8),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 0.8,
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  ...List.generate(_availableAudioTracks.length, (index) {
+                    final trackLabel = _availableAudioTracks[index];
+                    final isSelected = _selectedAudioTrackIndex == index;
+                    return GestureDetector(
+                      onTap: () {
+                        setModalState(() => _selectedAudioTrackIndex = index);
+                        setState(() => _selectedAudioTrackIndex = index);
+                        PlatformBridge.switchVideoAudioTrack(
+                          _videoElement,
+                          index,
+                        );
+                        Navigator.of(ctx).pop();
+                        ScaffoldMessenger.of(context).clearSnackBars();
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            backgroundColor: const Color(0xFF071A14),
+                            behavior: SnackBarBehavior.floating,
+                            duration: const Duration(seconds: 2),
+                            content: Text(
+                              "Audio switched to $trackLabel",
+                              style: const TextStyle(
+                                color: Color(0xFF00E676),
+                                fontWeight: FontWeight.w700,
+                                fontSize: 12.5,
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                      child: Container(
+                        margin: const EdgeInsets.only(bottom: 10),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 12,
+                        ),
+                        decoration: BoxDecoration(
+                          gradient: isSelected
+                              ? LinearGradient(
+                                  colors: [
+                                    const Color(0xFF00E676)
+                                        .withValues(alpha: 0.22),
+                                    const Color(0xFF10B981)
+                                        .withValues(alpha: 0.10),
+                                  ],
+                                )
+                              : null,
+                          color: isSelected
+                              ? null
+                              : Colors.white.withValues(alpha: 0.04),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(
+                            color: isSelected
+                                ? const Color(0xFF00E676)
+                                : Colors.white.withValues(alpha: 0.1),
+                          ),
+                        ),
+                        child: Row(
+                          children: [
+                            Icon(
+                              isSelected
+                                  ? Icons.radio_button_checked_rounded
+                                  : Icons.radio_button_off_rounded,
+                              color: isSelected
+                                  ? const Color(0xFF00E676)
+                                  : Colors.white54,
+                              size: 20,
+                            ),
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                trackLabel,
+                                style: TextStyle(
+                                  color: isSelected
+                                      ? Colors.white
+                                      : const Color(0xFFCBD5E1),
+                                  fontSize: 13,
+                                  fontWeight: isSelected
+                                      ? FontWeight.w800
+                                      : FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                            if (isSelected)
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 8,
+                                  vertical: 3,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF00E676),
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Text(
+                                  "ACTIVE",
+                                  style: TextStyle(
+                                    color: Color(0xFF03120D),
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w900,
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
   }
 
   void _setupDirectHtml5Video(MovieItem movie, String directMp4Url) {
@@ -147,7 +510,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
   void _switchToDirectPlayer() {
     if (_directVideoViewType == null || _videoElement == null) return;
     setState(() {
-      _useDirectStream = true;
+      _useEmbedFrame = false;
       _showControls = true;
     });
     PlatformBridge.playVideo(_videoElement, () {
@@ -294,12 +657,16 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
         ? (_currentSeconds / _totalSeconds).clamp(0.0, 1.0)
         : 0.0;
 
+    final String embedSrc = movie.embedUrl.isNotEmpty
+        ? movie.embedUrl
+        : "https://streamtape.com/e/${movie.id}";
+
     return Container(
       color: const Color(0xFF030706),
       child: Column(
         children: [
           // ==============================================================
-          // 1. HEADERLESS 100% NIOOO M CUSTOM VIDEO PLAYER (BACKGROUND DIRECT STREAM)
+          // 1. AUTO-DETECTED VIDEO PLAYER (STREAMTAPE FRAME ON WEB / DIRECT ON ANDROID)
           // ==============================================================
           AspectRatio(
             aspectRatio: 16 / 9,
@@ -308,8 +675,17 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  if (_directVideoViewType != null && _videoElement != null)
-                    // 100% Custom Niooo M Video Player playing the extracted direct MP4 stream
+                  if (_useEmbedFrame && PlatformBridge.isWeb)
+                    // Website Environment: Play via Official Streamtape Frame (`https://streamtape.com/e/<id>`)
+                    PlatformBridge.buildEmbeddedPlayer(
+                      viewType: _embedViewType,
+                      embedSrc: embedSrc,
+                      backdropUrl: movie.backdropUrl,
+                      title: movie.title,
+                    )
+                  else if (_directVideoViewType != null &&
+                      _videoElement != null)
+                    // Android Environment (or Direct Stream active): Play via Direct Stream
                     Stack(
                       fit: StackFit.expand,
                       children: [
@@ -454,8 +830,8 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                                           onTap: _toggleMute,
                                           child: Icon(
                                             _isMuted
-                                                ? Icons.volume_off_rounded
-                                                : Icons.volume_up_rounded,
+                                                  ? Icons.volume_off_rounded
+                                                  : Icons.volume_up_rounded,
                                             color: Colors.white,
                                             size: 20,
                                           ),
@@ -480,7 +856,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                       ],
                     )
                   else
-                    // Background Direct Link Extraction State (with poster backdrop & retry if needed)
+                    // Loading / Retry state for Direct Stream
                     Stack(
                       fit: StackFit.expand,
                       children: [
@@ -518,7 +894,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                                                 BorderRadius.circular(14),
                                           ),
                                           child: const Text(
-                                            "Retry Direct HD Stream",
+                                            "Retry Stream",
                                             style: TextStyle(
                                               color: Color(0xFF03120D),
                                               fontSize: 12,
@@ -542,7 +918,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                                       ),
                                       SizedBox(height: 10),
                                       Text(
-                                        "Preparing Niooo M Direct HD Stream...",
+                                        "Loading HD Stream...",
                                         style: TextStyle(
                                           color: Colors.white,
                                           fontSize: 12,
@@ -556,7 +932,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                       ],
                     ),
 
-                  // Subtle floating minimize button on top-left (no header bar!)
+                  // Top-Left: Clean Minimize / Back button
                   Positioned(
                     top: 10,
                     left: 12,
@@ -587,61 +963,202 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                     ),
                   ),
 
-                  // Niooo M Custom Player Direct Stream Badge on Top-Right
+                  // Top-Right: Clean Settings Icon for Dual Audio Check & Audio Track Switching
+                  // (No "Niooo Custom Player" text — completely clean corner with Settings icon!)
                   Positioned(
                     top: 10,
                     right: 12,
                     child: GestureDetector(
-                      onTap: () {
-                        if (_hasStreamError) {
-                          _initStreamtapePlayer(movie);
-                        } else {
-                          _toggleControlsVisibility();
-                        }
-                      },
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
+                      onTap: _openDualAudioSettingsSheet,
+                      child: ClipOval(
                         child: BackdropFilter(
                           filter:
                               ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
                           child: Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 5,
-                            ),
+                            width: 36,
+                            height: 36,
                             decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.65),
-                              borderRadius: BorderRadius.circular(14),
+                              color: Colors.black.withValues(alpha: 0.62),
+                              shape: BoxShape.circle,
                               border: Border.all(
                                 color: const Color(0xFF00E676)
-                                    .withValues(alpha: 0.5),
+                                    .withValues(alpha: 0.45),
                               ),
                             ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  _isResolvingDirect
-                                      ? Icons.sync_rounded
-                                      : Icons.bolt_rounded,
-                                  color: const Color(0xFF00E676),
-                                  size: 14,
-                                ),
-                                const SizedBox(width: 4),
-                                Text(
-                                  _isResolvingDirect
-                                      ? "Extracting Direct Link..."
-                                      : "Niooo Custom HD Player",
-                                  style: const TextStyle(
-                                    color: Color(0xFF00E676),
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.w800,
-                                  ),
-                                ),
-                              ],
+                            child: const Icon(
+                              Icons.settings_rounded,
+                              color: Colors.white,
+                              size: 20,
                             ),
                           ),
                         ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // ==============================================================
+          // 1B. STREAM MODE & DIRECT OPTIONS BUTTON BAR (AUTO ENVIRONMENT + FRAME/DIRECT BUTTONS)
+          // ==============================================================
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+            decoration: BoxDecoration(
+              color: const Color(0xFF06110E),
+              border: Border(
+                bottom: BorderSide(
+                  color: const Color(0xFF00E676).withValues(alpha: 0.16),
+                ),
+              ),
+            ),
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  // Streamtape Frame Button (Default & Recommended on Website)
+                  GestureDetector(
+                    onTap: _switchToStreamtapeFrameMode,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 11,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: _useEmbedFrame
+                            ? const LinearGradient(
+                                colors: [Color(0xFF00E676), Color(0xFF10B981)],
+                              )
+                            : null,
+                        color: _useEmbedFrame
+                            ? null
+                            : Colors.white.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: _useEmbedFrame
+                              ? Colors.white70
+                              : const Color(0xFF00E676).withValues(alpha: 0.28),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.web_asset_rounded,
+                            size: 14,
+                            color: _useEmbedFrame
+                                ? const Color(0xFF03120D)
+                                : const Color(0xFF00E676),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            PlatformBridge.isWeb
+                                ? "Streamtape Frame (Web Auto)"
+                                : "Streamtape Frame",
+                            style: TextStyle(
+                              color: _useEmbedFrame
+                                  ? const Color(0xFF03120D)
+                                  : const Color(0xFFF0FDF4),
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+
+                  // Direct Stream Player Button (Default & Native on Android App)
+                  GestureDetector(
+                    onTap: _switchToDirectStreamMode,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 11,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: !_useEmbedFrame
+                            ? const LinearGradient(
+                                colors: [Color(0xFF00E676), Color(0xFF10B981)],
+                              )
+                            : null,
+                        color: !_useEmbedFrame
+                            ? null
+                            : Colors.white.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: !_useEmbedFrame
+                              ? Colors.white70
+                              : const Color(0xFF00E676).withValues(alpha: 0.28),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.play_circle_fill_rounded,
+                            size: 14,
+                            color: !_useEmbedFrame
+                                ? const Color(0xFF03120D)
+                                : const Color(0xFF00E676),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            !PlatformBridge.isWeb
+                                ? "Direct Player (Android Auto)"
+                                : "Direct Stream",
+                            style: TextStyle(
+                              color: !_useEmbedFrame
+                                  ? const Color(0xFF03120D)
+                                  : const Color(0xFFF0FDF4),
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+
+                  // Dual Audio Quick Button
+                  GestureDetector(
+                    onTap: _openDualAudioSettingsSheet,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 11,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: const Color(0xFF00E676).withValues(alpha: 0.28),
+                        ),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(
+                            Icons.graphic_eq_rounded,
+                            size: 14,
+                            color: Color(0xFF00E676),
+                          ),
+                          const SizedBox(width: 5),
+                          Text(
+                            _isMovieDualAudio(movie)
+                                ? "Dual Audio (${_selectedAudioTrackIndex == 0 ? 'Track 1' : 'Track 2'})"
+                                : "Audio Settings",
+                            style: const TextStyle(
+                              color: Color(0xFFF0FDF4),
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
