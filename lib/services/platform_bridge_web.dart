@@ -156,10 +156,12 @@ class PlatformBridge {
 
   static void playVideo(Object? videoObj, void Function() onMutedFallback) {
     if (videoObj is html.VideoElement) {
-      videoObj.play().catchError((_) {
+      videoObj.play().catchError((_) async {
         videoObj.muted = true;
         onMutedFallback();
-        return videoObj.play();
+        try {
+          await videoObj.play();
+        } catch (_) {}
       });
     }
   }
