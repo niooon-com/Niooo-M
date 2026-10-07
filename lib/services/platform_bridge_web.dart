@@ -263,4 +263,22 @@ class PlatformBridge {
   }) {
     return HtmlElementView(viewType: viewType);
   }
+
+  static void switchVideoAudioTrack(Object? videoObj, int trackIndex) {
+    if (videoObj == null) return;
+    try {
+      final audioTracks = js_util.getProperty<Object?>(videoObj, "audioTracks");
+      if (audioTracks != null) {
+        final len =
+            js_util.getProperty<int?>(audioTracks, "length") ?? 0;
+        for (int i = 0; i < len; i++) {
+          final track = js_util.callMethod<Object?>(audioTracks, "item", [i]);
+          if (track != null) {
+            js_util.setProperty(track, "enabled", i == trackIndex);
+          }
+        }
+      }
+    } catch (_) {}
+  }
 }
+
