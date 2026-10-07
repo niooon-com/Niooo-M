@@ -205,17 +205,20 @@ jobs:
           EOF
 
           # Configure MainActivity.kt with Native Android Fullscreen, Landscape Orientation & WakeLock MethodChannel
-          MAIN_KT=$(find android/app/src/main -name "MainActivity.kt" | head -n 1)
+          MAIN_KT=$(find android/app/src/main -name "MainActivity.kt" 2>/dev/null | head -n 1 || true)
           if [ -z "$MAIN_KT" ]; then
             mkdir -p android/app/src/main/kotlin/com/niooo/m/flutter_live_app
             MAIN_KT="android/app/src/main/kotlin/com/niooo/m/flutter_live_app/MainActivity.kt"
             PKG_LINE="package com.niooo.m.flutter_live_app"
           else
-            PKG_LINE=$(grep "^package " "$MAIN_KT" | head -n 1)
+            PKG_LINE=$(grep "^package " "$MAIN_KT" | head -n 1 || true)
+            if [ -z "$PKG_LINE" ]; then
+              PKG_LINE="package com.niooo.m.flutter_live_app"
+            fi
           fi
 
-          cat << EOF > "$MAIN_KT"
-          $PKG_LINE
+          echo "$PKG_LINE" > "$MAIN_KT"
+          cat << 'EOF' >> "$MAIN_KT"
 
           import android.content.pm.ActivityInfo
           import android.os.Build
