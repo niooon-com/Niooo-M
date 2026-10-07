@@ -321,16 +321,8 @@ class MovieCatalogData {
           }
         }
 
-        // Also prepend any custom-added movies in Firestore not yet in baseList
-        fsMap.forEach((fid, fsDoc) {
-          if (!existingIds.contains(fid) && !deletedIds.contains(fid)) {
-            final title = (fsDoc["title"] ?? "").toString().trim();
-            if (title.isNotEmpty) {
-              merged.insert(0, MovieItem.fromStreamtapeJson(fsDoc));
-            }
-          }
-        });
-
+        // Do NOT re-add movies from Firestore that are not present in baseList (the live Streamtape API),
+        // because if a video was deleted from Streamtape, it must never be shown even if its data still exists in Firebase!
         if (merged.isNotEmpty) {
           return merged;
         }
