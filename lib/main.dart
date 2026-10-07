@@ -237,6 +237,18 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
   void _onSystemPopInvokedWithResult(bool didPop, Object? result) {
     if (didPop) return;
 
+    // If a movie is currently playing in landscape fullscreen on Android,
+    // exit fullscreen and return to portrait mode first before leaving the player!
+    if (_activePlayingMovieId != null &&
+        MediaQuery.of(context).orientation == Orientation.landscape) {
+      SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+      SystemChrome.setPreferredOrientations([
+        DeviceOrientation.portraitUp,
+        DeviceOrientation.portraitDown,
+      ]);
+      return;
+    }
+
     // Step back smoothly to the previous screen/movie/tab if available
     final steppedBack = _handleSequentialBack();
     if (steppedBack) {
@@ -495,6 +507,14 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
 
             // Full-Screen Edge-to-Edge Body Content with Smooth Animated Transitions
             SafeArea(
+              top: !(activeMovie != null &&
+                  MediaQuery.of(context).orientation == Orientation.landscape),
+              bottom: !(activeMovie != null &&
+                  MediaQuery.of(context).orientation == Orientation.landscape),
+              left: !(activeMovie != null &&
+                  MediaQuery.of(context).orientation == Orientation.landscape),
+              right: !(activeMovie != null &&
+                  MediaQuery.of(context).orientation == Orientation.landscape),
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 240),
                 switchInCurve: Curves.easeOutCubic,
