@@ -76,6 +76,8 @@ class AuthBridgeService extends ChangeNotifier {
   bool get isAdmin => _user?.isAdmin == true;
   bool get isLoading => _isLoading;
   String? get authError => _authError;
+  int _lastRealtimeMovieSyncMs = 0;
+  int get lastRealtimeMovieSyncMs => _lastRealtimeMovieSyncMs;
 
   void init() {
     if (_initialized) return;
@@ -125,6 +127,12 @@ class AuthBridgeService extends ChangeNotifier {
     try {
       final decoded = jsonDecode(jsonStr);
       if (decoded is! Map<String, dynamic>) return;
+
+      if (decoded["streamtapeRealtimeSync"] != null) {
+        _lastRealtimeMovieSyncMs = DateTime.now().millisecondsSinceEpoch;
+        notifyListeners();
+        return;
+      }
 
       final bridgeUser = decoded["user"];
       final bridgeLoading = decoded["isLoading"] == true;
