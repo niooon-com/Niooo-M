@@ -104,11 +104,22 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
   bool _dolbyAtmosEnabled = true;
   bool _autoplayTrailers = true;
 
+  int _lastHandledRealtimeMs = 0;
+
+  void _onAuthOrRealtimeChanged() {
+    final latestMs = AuthBridgeService.instance.lastRealtimeMovieSyncMs;
+    if (latestMs > _lastHandledRealtimeMs) {
+      _lastHandledRealtimeMs = latestMs;
+      _syncFromStreamtapeAccount(forceRefresh: true);
+    }
+  }
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     AuthBridgeService.instance.init();
+    AuthBridgeService.instance.addListener(_onAuthOrRealtimeChanged);
     _movies = MovieCatalogData.initialMovies
         .map(
           (m) => m.copyWith(
@@ -119,9 +130,9 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
         .toList();
     _syncFromStreamtapeAccount(forceRefresh: true);
 
-    // Automatically poll for new movies added to the server or Streamtape account
+    // Real-time background sync with Firebase Firestore & Streamtape every 12 seconds
     _catalogAutoSyncTimer = Timer.periodic(
-      const Duration(seconds: 25),
+      const Duration(seconds: 12),
       (_) => _syncFromStreamtapeAccount(forceRefresh: true),
     );
   }
@@ -129,6 +140,7 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    AuthBridgeService.instance.removeListener(_onAuthOrRealtimeChanged);
     _catalogAutoSyncTimer?.cancel();
     super.dispose();
   }
