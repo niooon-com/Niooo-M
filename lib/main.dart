@@ -11,7 +11,16 @@ import "pages/profile_settings_page.dart";
 import "pages/movie_player_page.dart";
 import "widgets/fluid_glass_bottom_bar.dart";
 
+import "dart:ui";
+
 void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  FlutterError.onError = (FlutterErrorDetails details) {
+    // Prevent uncaught rendering/network image errors from crashing the runtime
+  };
+  PlatformDispatcher.instance.onError = (Object error, StackTrace stack) {
+    return true;
+  };
   runApp(const NioooMovieApp());
 }
 
@@ -100,7 +109,14 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     AuthBridgeService.instance.init();
-    _movies = List<MovieItem>.from(MovieCatalogData.initialMovies);
+    _movies = MovieCatalogData.initialMovies
+        .map(
+          (m) => m.copyWith(
+            posterUrl: MovieItem.sanitizeWebImageUrl(m.posterUrl),
+            backdropUrl: MovieItem.sanitizeWebImageUrl(m.backdropUrl),
+          ),
+        )
+        .toList();
     _syncFromStreamtapeAccount(forceRefresh: true);
 
     // Automatically poll for new movies added to the server or Streamtape account
