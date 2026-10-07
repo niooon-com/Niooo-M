@@ -120,14 +120,9 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
     WidgetsBinding.instance.addObserver(this);
     AuthBridgeService.instance.init();
     AuthBridgeService.instance.addListener(_onAuthOrRealtimeChanged);
-    _movies = MovieCatalogData.initialMovies
-        .map(
-          (m) => m.copyWith(
-            posterUrl: MovieItem.sanitizeWebImageUrl(m.posterUrl),
-            backdropUrl: MovieItem.sanitizeWebImageUrl(m.backdropUrl),
-          ),
-        )
-        .toList();
+    // Load only previously verified live Streamtape movies from local device cache (for offline/instant launch),
+    // and immediately replace with live Streamtape API + Firebase verification as soon as internet responds!
+    _movies = MovieCatalogData.loadCachedVerifiedCatalog();
     _syncFromStreamtapeAccount(forceRefresh: true);
 
     // Real-time background sync with Firebase Firestore & Streamtape every 12 seconds
@@ -301,7 +296,9 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
     );
     if (!mounted) return;
     setState(() {
-      _movies = liveCatalog;
+      if (liveCatalog.isNotEmpty) {
+        _movies = liveCatalog;
+      }
       _isSyncingStreamtape = false;
     });
   }
@@ -329,12 +326,14 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
       } else {
         _movies = [updatedMovie, ..._movies];
       }
+      MovieCatalogData.saveVerifiedCatalogToCache(_movies);
     });
   }
 
   void _deleteMovieLocally(String movieId) {
     setState(() {
       _movies = _movies.where((m) => m.id != movieId).toList();
+      MovieCatalogData.saveVerifiedCatalogToCache(_movies);
     });
   }
 
