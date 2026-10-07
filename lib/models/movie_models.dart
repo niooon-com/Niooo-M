@@ -92,6 +92,13 @@ class MovieItem {
     this.comments = const [],
   });
 
+  static String sanitizeWebImageUrl(String rawUrl) {
+    if (PlatformBridge.isWeb && rawUrl.contains("tapecontent.net")) {
+      return "/api/streamtape/thumb?url=${Uri.encodeComponent(rawUrl)}";
+    }
+    return rawUrl;
+  }
+
   factory MovieItem.fromStreamtapeJson(Map<String, dynamic> json) {
     final String id = (json["id"] ?? "").toString();
     final String title = (json["title"] ?? "Untitled Movie").toString();
@@ -99,9 +106,11 @@ class MovieItem {
     final String episodeLabel = (json["episodeLabel"] ?? "").toString();
     final int episodeNumber =
         int.tryParse((json["episodeNumber"] ?? "0").toString()) ?? 0;
-    final String posterUrl = (json["posterUrl"] ?? "").toString();
-    final String backdropUrl =
-        (json["backdropUrl"] ?? posterUrl).toString();
+    final String posterUrl =
+        sanitizeWebImageUrl((json["posterUrl"] ?? "").toString());
+    final String backdropUrl = sanitizeWebImageUrl(
+      (json["backdropUrl"] ?? posterUrl).toString(),
+    );
     final String embedUrl =
         (json["embedUrl"] ?? "https://streamtape.com/e/$id").toString();
     final String videoStreamUrl =
