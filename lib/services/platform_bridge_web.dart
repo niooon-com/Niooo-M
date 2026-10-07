@@ -220,6 +220,14 @@ class PlatformBridge {
     }
   }
 
+  static Widget buildCustomVideoSurface({
+    required Object? videoObj,
+    required String viewType,
+    required String backdropUrl,
+  }) {
+    return HtmlElementView(viewType: viewType);
+  }
+
   static Widget buildEmbeddedPlayer({
     required String viewType,
     required String embedSrc,
