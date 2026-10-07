@@ -92,6 +92,7 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
       true; // Direct movie platform access without mandatory login
   bool _isSyncingStreamtape = false;
   bool _isFullScreenAdminOpen = false;
+  bool _isPlayerFullscreen = false;
   int _activeNavIndex = 0; // 0: Home, 1: Explore, 2: Watchlist, 3: Profile
   String? _activePlayingMovieId;
   Timer? _catalogAutoSyncTimer;
@@ -237,10 +238,12 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
   void _onSystemPopInvokedWithResult(bool didPop, Object? result) {
     if (didPop) return;
 
-    // If a movie is currently playing in landscape fullscreen on Android,
+    // If a movie is currently playing in fullscreen or landscape on Android,
     // exit fullscreen and return to portrait mode first before leaving the player!
     if (_activePlayingMovieId != null &&
-        MediaQuery.of(context).orientation == Orientation.landscape) {
+        (_isPlayerFullscreen ||
+            MediaQuery.of(context).orientation == Orientation.landscape)) {
+      setState(() => _isPlayerFullscreen = false);
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
       SystemChrome.setPreferredOrientations([
         DeviceOrientation.portraitUp,
@@ -435,6 +438,9 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
     final activeMovie = _activePlayingMovie;
     final bool hideBottomNav =
         !_hasDismissedWelcome || activeMovie != null || _isFullScreenAdminOpen;
+    final bool isEdgeToEdgeFullscreen = activeMovie != null &&
+        (_isPlayerFullscreen ||
+            MediaQuery.of(context).orientation == Orientation.landscape);
 
     return PopScope(
       canPop: false,
@@ -507,14 +513,10 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
 
             // Full-Screen Edge-to-Edge Body Content with Smooth Animated Transitions
             SafeArea(
-              top: !(activeMovie != null &&
-                  MediaQuery.of(context).orientation == Orientation.landscape),
-              bottom: !(activeMovie != null &&
-                  MediaQuery.of(context).orientation == Orientation.landscape),
-              left: !(activeMovie != null &&
-                  MediaQuery.of(context).orientation == Orientation.landscape),
-              right: !(activeMovie != null &&
-                  MediaQuery.of(context).orientation == Orientation.landscape),
+              top: !isEdgeToEdgeFullscreen,
+              bottom: !isEdgeToEdgeFullscreen,
+              left: !isEdgeToEdgeFullscreen,
+              right: !isEdgeToEdgeFullscreen,
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 240),
                 switchInCurve: Curves.easeOutCubic,
@@ -566,7 +568,10 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
                                       _likedMovieIds.contains(activeMovie.id),
                                   isBookmarked:
                                       _watchlistIds.contains(activeMovie.id),
-                                  onBack: () => _handleSequentialBack(),
+                                  onBack: () {
+                                    setState(() => _isPlayerFullscreen = false);
+                                    _handleSequentialBack();
+                                  },
                                   onToggleLike: () =>
                                       _toggleLikeMovie(activeMovie.id),
                                   onToggleBookmark: () =>
@@ -581,6 +586,12 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
                                   onUpdateProgress: (ratio) =>
                                       _updateMovieProgress(
                                           activeMovie.id, ratio),
+                                  onFullscreenChanged: (isFs) {
+                                    if (_isPlayerFullscreen != isFs) {
+                                      setState(
+                                          () => _isPlayerFullscreen = isFs);
+                                    }
+                                  },
                                 )
                               : _buildTabContent()),
                 ),
