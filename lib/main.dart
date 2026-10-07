@@ -9,6 +9,8 @@ import "pages/explore_page.dart";
 import "pages/watchlist_page.dart";
 import "pages/profile_settings_page.dart";
 import "pages/movie_player_page.dart";
+import "pages/admin_panel_page.dart";
+import "services/auth_bridge_service.dart";
 import "widgets/fluid_glass_bottom_bar.dart";
 
 import "dart:ui";
