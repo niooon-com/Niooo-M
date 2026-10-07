@@ -3,6 +3,7 @@ import "dart:io";
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
 import "package:video_player/video_player.dart";
+import "package:wakelock_plus/wakelock_plus.dart";
 import "firebase_streamtape_service.dart";
 
 class PlatformBridge {
@@ -820,6 +821,7 @@ class PlatformBridge {
       if (isPlaying != lastPlayingState) {
         lastPlayingState = isPlaying;
         if (isPlaying) {
+          setScreenWakelock(true);
           onPlay();
         } else {
           onPause();
@@ -833,6 +835,7 @@ class PlatformBridge {
       if (totalSecs > 0) {
         onDurationLoaded(totalSecs);
       }
+      setScreenWakelock(true);
       controller.play();
       onPlay();
     }).catchError((_) {});
@@ -840,7 +843,18 @@ class PlatformBridge {
     return controller;
   }
 
+  static void setScreenWakelock(bool enable) {
+    try {
+      if (enable) {
+        WakelockPlus.enable();
+      } else {
+        WakelockPlus.disable();
+      }
+    } catch (_) {}
+  }
+
   static void playVideo(Object? videoObj, void Function() onMutedFallback) {
+    setScreenWakelock(true);
     if (videoObj is VideoPlayerController) {
       videoObj.play();
     }
@@ -888,15 +902,30 @@ class PlatformBridge {
     return false;
   }
 
-  static void requestVideoFullscreen(Object? videoObj) {
+  static void enterNativeFullscreen() {
+    setScreenWakelock(true);
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
       DeviceOrientation.landscapeRight,
-      DeviceOrientation.portraitUp,
     ]);
   }
 
+  static void exitNativeFullscreen() {
+    SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.portraitUp,
+      DeviceOrientation.portraitDown,
+    ]);
+  }
+
+  static void requestVideoFullscreen(Object? videoObj) {
+    enterNativeFullscreen();
+  }
+
   static void disposeVideo(Object? videoObj) {
+    setScreenWakelock(false);
+    exitNativeFullscreen();
     if (videoObj is VideoPlayerController) {
       videoObj.pause();
       videoObj.dispose();
