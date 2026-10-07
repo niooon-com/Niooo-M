@@ -843,6 +843,9 @@ class PlatformBridge {
     return controller;
   }
 
+  static const MethodChannel _nativePlayerChannel =
+      MethodChannel("com.niooo.m/player");
+
   static void setScreenWakelock(bool enable) {
     try {
       if (enable) {
@@ -850,6 +853,9 @@ class PlatformBridge {
       } else {
         WakelockPlus.disable();
       }
+    } catch (_) {}
+    try {
+      _nativePlayerChannel.invokeMethod("setKeepScreenOn", {"enable": enable});
     } catch (_) {}
   }
 
@@ -904,6 +910,9 @@ class PlatformBridge {
 
   static void enterNativeFullscreen() {
     setScreenWakelock(true);
+    try {
+      _nativePlayerChannel.invokeMethod("enterFullscreen");
+    } catch (_) {}
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.landscapeLeft,
@@ -912,6 +921,9 @@ class PlatformBridge {
   }
 
   static void exitNativeFullscreen() {
+    try {
+      _nativePlayerChannel.invokeMethod("exitFullscreen");
+    } catch (_) {}
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     SystemChrome.setPreferredOrientations([
       DeviceOrientation.portraitUp,
