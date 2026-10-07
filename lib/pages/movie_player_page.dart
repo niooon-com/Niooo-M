@@ -18,6 +18,7 @@ class MoviePlayerPage extends StatefulWidget {
   final ValueChanged<String> onAddComment;
   final ValueChanged<MovieItem> onSelectOtherMovie;
   final ValueChanged<double> onUpdateProgress;
+  final ValueChanged<bool>? onFullscreenChanged;
 
   const MoviePlayerPage({
     super.key,
@@ -32,6 +33,7 @@ class MoviePlayerPage extends StatefulWidget {
     required this.onAddComment,
     required this.onSelectOtherMovie,
     required this.onUpdateProgress,
+    this.onFullscreenChanged,
   });
 
   @override
@@ -596,6 +598,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
       _isFullscreen = nextFullscreen;
       _showControls = true;
     });
+    widget.onFullscreenChanged?.call(nextFullscreen);
 
     if (nextFullscreen) {
       PlatformBridge.enterNativeFullscreen();
@@ -611,6 +614,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
         _isFullscreen = false;
         _showControls = true;
       });
+      widget.onFullscreenChanged?.call(false);
       PlatformBridge.exitNativeFullscreen();
       return;
     }
@@ -630,6 +634,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
       }
       PlatformBridge.setScreenWakelock(true);
     } else {
+      widget.onFullscreenChanged?.call(false);
       PlatformBridge.disposeVideo(_videoElement);
     }
     _videoElement = null;
@@ -845,14 +850,18 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                                     behavior: HitTestBehavior.opaque,
                                     onTap: _toggleFullscreen,
                                     child: Container(
-                                      padding: const EdgeInsets.all(6),
+                                      padding: const EdgeInsets.all(7),
                                       decoration: BoxDecoration(
                                         color: _isFullscreen
                                             ? const Color(0xFF00E676)
-                                                .withValues(alpha: 0.22)
+                                                .withValues(alpha: 0.25)
                                             : Colors.black
-                                                .withValues(alpha: 0.35),
-                                        borderRadius: BorderRadius.circular(8),
+                                                .withValues(alpha: 0.45),
+                                        borderRadius: BorderRadius.circular(9),
+                                        border: Border.all(
+                                          color: const Color(0xFF00E676)
+                                              .withValues(alpha: 0.45),
+                                        ),
                                       ),
                                       child: Icon(
                                         _isFullscreen
@@ -983,34 +992,69 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
             ),
           ),
 
-          // Top-Right: Clean Settings Icon for Dual Audio Check & Audio Track Switching
-          // (No "Niooo Custom Player" text — completely clean corner with Settings icon!)
+          // Top-Right: Clean Settings + Fullscreen Icons
           Positioned(
             top: 10,
             right: 12,
-            child: GestureDetector(
-              onTap: _openDualAudioSettingsSheet,
-              child: ClipOval(
-                child: BackdropFilter(
-                  filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.62),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: const Color(0xFF00E676).withValues(alpha: 0.45),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!PlatformBridge.isWeb || !_useEmbedFrame) ...[
+                  GestureDetector(
+                    onTap: _toggleFullscreen,
+                    child: ClipOval(
+                      child: BackdropFilter(
+                        filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                        child: Container(
+                          width: 36,
+                          height: 36,
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.62),
+                            shape: BoxShape.circle,
+                            border: Border.all(
+                              color: const Color(0xFF00E676)
+                                  .withValues(alpha: 0.45),
+                            ),
+                          ),
+                          child: Icon(
+                            _isFullscreen
+                                ? Icons.fullscreen_exit_rounded
+                                : Icons.fullscreen_rounded,
+                            color: const Color(0xFF00E676),
+                            size: 21,
+                          ),
+                        ),
                       ),
                     ),
-                    child: const Icon(
-                      Icons.settings_rounded,
-                      color: Colors.white,
-                      size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                GestureDetector(
+                  onTap: _openDualAudioSettingsSheet,
+                  child: ClipOval(
+                    child: BackdropFilter(
+                      filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                      child: Container(
+                        width: 36,
+                        height: 36,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.62),
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: const Color(0xFF00E676)
+                                .withValues(alpha: 0.45),
+                          ),
+                        ),
+                        child: const Icon(
+                          Icons.settings_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ),
                     ),
                   ),
                 ),
-              ),
+              ],
             ),
           ),
         ],
@@ -1021,6 +1065,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
   @override
   Widget build(BuildContext context) {
     final movie = widget.movie;
+    final mediaSize = MediaQuery.of(context).size;
     final mediaOrientation = MediaQuery.of(context).orientation;
     final bool isEffectiveFullscreen = _isFullscreen ||
         (!PlatformBridge.isWeb && mediaOrientation == Orientation.landscape);
@@ -1047,8 +1092,15 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
         ? movie.embedUrl
         : "https://streamtape.com/e/${movie.id}";
 
-    // In Fullscreen / Landscape mode on Android, expand the video player to fill 100% of the screen
+    // In Fullscreen mode on Android (or Landscape), expand the video player to fill 100% of the screen.
+    // If the device is still in portrait (e.g. Auto-Rotate is locked by OS), RotatedBox(quarterTurns: 1)
+    // automatically rotates the video player into true landscape fullscreen!
     if (isEffectiveFullscreen) {
+      final bool needsManualLandscapeRotation =
+          !PlatformBridge.isWeb && mediaSize.height > mediaSize.width;
+      final Widget playerStack =
+          _buildVideoPlayerStack(movie, embedSrc, progressRatio);
+
       return PopScope(
         canPop: false,
         onPopInvokedWithResult: (didPop, _) {
@@ -1057,13 +1109,19 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
             _isFullscreen = false;
             _showControls = true;
           });
+          widget.onFullscreenChanged?.call(false);
           PlatformBridge.exitNativeFullscreen();
         },
         child: Container(
           color: Colors.black,
           width: double.infinity,
           height: double.infinity,
-          child: _buildVideoPlayerStack(movie, embedSrc, progressRatio),
+          child: needsManualLandscapeRotation
+              ? RotatedBox(
+                  quarterTurns: 1,
+                  child: playerStack,
+                )
+              : playerStack,
         ),
       );
     }
@@ -1233,6 +1291,44 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                                 ? "Dual Audio (${_selectedAudioTrackIndex == 0 ? 'Track 1' : 'Track 2'})"
                                 : "Audio Settings",
                             style: const TextStyle(
+                              color: Color(0xFFF0FDF4),
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+
+                  // Full Screen Quick Button
+                  GestureDetector(
+                    onTap: _toggleFullscreen,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 11,
+                        vertical: 6,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.06),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(
+                          color: const Color(0xFF00E676).withValues(alpha: 0.28),
+                        ),
+                      ),
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.fullscreen_rounded,
+                            size: 15,
+                            color: Color(0xFF00E676),
+                          ),
+                          SizedBox(width: 4),
+                          Text(
+                            "Full Screen",
+                            style: TextStyle(
                               color: Color(0xFFF0FDF4),
                               fontSize: 11.5,
                               fontWeight: FontWeight.w700,
