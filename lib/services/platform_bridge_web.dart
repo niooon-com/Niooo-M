@@ -130,6 +130,7 @@ class PlatformBridge {
       ..style.width = "100%"
       ..style.height = "100%"
       ..style.backgroundColor = "#000000"
+      ..setAttribute("loading", "eager")
       ..allowFullscreen = true
       ..allow =
           "accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen";
@@ -151,6 +152,7 @@ class PlatformBridge {
     final video = html.VideoElement()
       ..src = src
       ..poster = posterUrl
+      ..preload = "auto"
       ..autoplay = false
       ..controls = false
       ..loop = false
