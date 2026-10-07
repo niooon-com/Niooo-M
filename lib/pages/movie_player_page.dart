@@ -48,6 +48,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
   /// - On Website: Defaults to Streamtape Frame (`_useEmbedFrame = true`) because direct links are IP/session-bound on web.
   /// - On Android App: Defaults to Direct Link Native Player (`_useEmbedFrame = false`).
   late bool _useEmbedFrame;
+  bool _isFullscreen = false;
   bool _isResolvingDirect = false;
   bool _hasStreamError = false;
   bool _isPlaying = true;
@@ -69,6 +70,8 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
   @override
   void initState() {
     super.initState();
+    // Keep screen awake while the video player page is open so the screen never dims or sleeps
+    PlatformBridge.setScreenWakelock(true);
     _initStreamtapePlayer(widget.movie);
   }
 
@@ -76,7 +79,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
   void didUpdateWidget(covariant MoviePlayerPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.movie.id != widget.movie.id) {
-      _disposeVideo();
+      _disposeVideo(keepFullscreenAndWakelock: true);
       _initStreamtapePlayer(widget.movie);
     }
   }
@@ -210,7 +213,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
   }
 
   void _switchToStreamtapeFrameMode() {
-    _disposeVideo();
+    _disposeVideo(keepFullscreenAndWakelock: true);
     final movie = widget.movie;
     final timestamp = DateTime.now().microsecondsSinceEpoch;
     _embedViewType = "niooo-st-embed-${movie.id}-$timestamp";
@@ -228,7 +231,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
   }
 
   void _switchToDirectStreamMode() {
-    _disposeVideo();
+    _disposeVideo(keepFullscreenAndWakelock: true);
     _initStreamtapePlayer(widget.movie, forceEmbedMode: false);
   }
 
@@ -581,27 +584,61 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
     setState(() => _isMuted = muted);
   }
 
-  void _requestFullscreen() {
-    final v = _videoElement;
-    if (v == null) return;
-    PlatformBridge.requestVideoFullscreen(v);
+  void _toggleFullscreen() {
+    PlatformBridge.setScreenWakelock(true);
+    if (PlatformBridge.isWeb && !_useEmbedFrame && _videoElement != null) {
+      PlatformBridge.requestVideoFullscreen(_videoElement);
+      return;
+    }
+
+    final nextFullscreen = !_isFullscreen;
+    setState(() {
+      _isFullscreen = nextFullscreen;
+      _showControls = true;
+    });
+
+    if (nextFullscreen) {
+      PlatformBridge.enterNativeFullscreen();
+    } else {
+      PlatformBridge.exitNativeFullscreen();
+    }
+    _scheduleHideControls();
   }
 
-  void _disposeVideo() {
+  void _handleBackOrExitFullscreen() {
+    if (_isFullscreen) {
+      setState(() {
+        _isFullscreen = false;
+        _showControls = true;
+      });
+      PlatformBridge.exitNativeFullscreen();
+      return;
+    }
+    widget.onBack();
+  }
+
+  void _disposeVideo({bool keepFullscreenAndWakelock = false}) {
     _hideControlsTimer?.cancel();
     _progressPollTimer?.cancel();
     if (_videoElement != null && _totalSeconds > 0) {
       final ratio = (_currentSeconds / _totalSeconds).clamp(0.0, 1.0);
       widget.onUpdateProgress(ratio);
     }
-    PlatformBridge.disposeVideo(_videoElement);
+    if (keepFullscreenAndWakelock) {
+      if (_videoElement != null) {
+        PlatformBridge.pauseVideo(_videoElement);
+      }
+      PlatformBridge.setScreenWakelock(true);
+    } else {
+      PlatformBridge.disposeVideo(_videoElement);
+    }
     _videoElement = null;
     _directVideoViewType = null;
   }
 
   @override
   void dispose() {
-    _disposeVideo();
+    _disposeVideo(keepFullscreenAndWakelock: false);
     _commentController.dispose();
     super.dispose();
   }
@@ -635,9 +672,358 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
     });
   }
 
+  Widget _buildVideoPlayerStack(
+    MovieItem movie,
+    String embedSrc,
+    double progressRatio,
+  ) {
+    return Container(
+      color: Colors.black,
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (_useEmbedFrame && PlatformBridge.isWeb)
+            // Website Environment: Play via Official Streamtape Frame (`https://streamtape.com/e/<id>`)
+            PlatformBridge.buildEmbeddedPlayer(
+              viewType: _embedViewType,
+              embedSrc: embedSrc,
+              backdropUrl: movie.backdropUrl,
+              title: movie.title,
+            )
+          else if (_directVideoViewType != null && _videoElement != null)
+            // Android Environment (or Direct Stream active): Play via Direct Stream
+            Stack(
+              fit: StackFit.expand,
+              children: [
+                PlatformBridge.buildCustomVideoSurface(
+                  videoObj: _videoElement,
+                  viewType: _directVideoViewType!,
+                  backdropUrl: movie.backdropUrl,
+                ),
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _toggleControlsVisibility,
+                  child: AnimatedOpacity(
+                    opacity: _showControls ? 1.0 : 0.0,
+                    duration: const Duration(milliseconds: 220),
+                    child: IgnorePointer(
+                      ignoring: !_showControls,
+                      child: Container(
+                        decoration: BoxDecoration(
+                          gradient: LinearGradient(
+                            begin: Alignment.topCenter,
+                            end: Alignment.bottomCenter,
+                            colors: [
+                              Colors.black.withValues(alpha: 0.45),
+                              Colors.black.withValues(alpha: 0.15),
+                              Colors.black.withValues(alpha: 0.78),
+                            ],
+                            stops: const [0.0, 0.45, 1.0],
+                          ),
+                        ),
+                        child: Stack(
+                          children: [
+                            Center(
+                              child: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  _playerCircleControl(
+                                    icon: Icons.replay_10_rounded,
+                                    size: 42,
+                                    onTap: () => _seekRelative(-10),
+                                  ),
+                                  const SizedBox(width: 24),
+                                  GestureDetector(
+                                    onTap: _togglePlayPause,
+                                    child: Container(
+                                      width: 58,
+                                      height: 58,
+                                      decoration: BoxDecoration(
+                                        shape: BoxShape.circle,
+                                        gradient: const LinearGradient(
+                                          colors: [
+                                            Color(0xFF00E676),
+                                            Color(0xFF10B981),
+                                          ],
+                                        ),
+                                        border: Border.all(
+                                          color: Colors.white
+                                              .withValues(alpha: 0.75),
+                                          width: 1.4,
+                                        ),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: const Color(0xFF00E676)
+                                                .withValues(alpha: 0.55),
+                                            blurRadius: 20,
+                                          ),
+                                        ],
+                                      ),
+                                      child: Icon(
+                                        _isPlaying
+                                            ? Icons.pause_rounded
+                                            : Icons.play_arrow_rounded,
+                                        color: const Color(0xFF03120D),
+                                        size: 34,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 24),
+                                  _playerCircleControl(
+                                    icon: Icons.forward_10_rounded,
+                                    size: 42,
+                                    onTap: () => _seekRelative(10),
+                                  ),
+                                ],
+                              ),
+                            ),
+                            Positioned(
+                              left: 12,
+                              right: 12,
+                              bottom: _isFullscreen ? 14 : 6,
+                              child: Row(
+                                children: [
+                                  Text(
+                                    _formatTime(_currentSeconds),
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 11,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                  Expanded(
+                                    child: SliderTheme(
+                                      data: SliderTheme.of(context).copyWith(
+                                        trackHeight: 3.0,
+                                        thumbShape: const RoundSliderThumbShape(
+                                          enabledThumbRadius: 6.0,
+                                        ),
+                                        overlayShape:
+                                            const RoundSliderOverlayShape(
+                                          overlayRadius: 12.0,
+                                        ),
+                                      ),
+                                      child: Slider(
+                                        value: progressRatio,
+                                        activeColor: const Color(0xFF00E676),
+                                        inactiveColor: Colors.white30,
+                                        onChanged: (v) {
+                                          final target = v * _totalSeconds;
+                                          PlatformBridge.setVideoCurrentTime(
+                                              _videoElement, target);
+                                          setState(
+                                              () => _currentSeconds = target);
+                                          _scheduleHideControls();
+                                        },
+                                      ),
+                                    ),
+                                  ),
+                                  Text(
+                                    _formatTime(_totalSeconds),
+                                    style: const TextStyle(
+                                      color: Colors.white70,
+                                      fontSize: 11,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: _toggleMute,
+                                    child: Padding(
+                                      padding: const EdgeInsets.all(6),
+                                      child: Icon(
+                                        _isMuted
+                                            ? Icons.volume_off_rounded
+                                            : Icons.volume_up_rounded,
+                                        color: Colors.white,
+                                        size: 21,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: _toggleFullscreen,
+                                    child: Container(
+                                      padding: const EdgeInsets.all(6),
+                                      decoration: BoxDecoration(
+                                        color: _isFullscreen
+                                            ? const Color(0xFF00E676)
+                                                .withValues(alpha: 0.22)
+                                            : Colors.black
+                                                .withValues(alpha: 0.35),
+                                        borderRadius: BorderRadius.circular(8),
+                                      ),
+                                      child: Icon(
+                                        _isFullscreen
+                                            ? Icons.fullscreen_exit_rounded
+                                            : Icons.fullscreen_rounded,
+                                        color: _isFullscreen
+                                            ? const Color(0xFF00E676)
+                                            : Colors.white,
+                                        size: 24,
+                                      ),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            )
+          else
+            // Loading / Retry state for Direct Stream
+            Stack(
+              fit: StackFit.expand,
+              children: [
+                if (movie.backdropUrl.isNotEmpty)
+                  Image.network(
+                    movie.backdropUrl,
+                    fit: BoxFit.cover,
+                    errorBuilder: (_, __, ___) =>
+                        Container(color: const Color(0xFF050D0A)),
+                  ),
+                Container(
+                  color: Colors.black.withValues(alpha: 0.65),
+                  child: Center(
+                    child: _hasStreamError
+                        ? Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.refresh_rounded,
+                                color: Color(0xFF00E676),
+                                size: 36,
+                              ),
+                              const SizedBox(height: 8),
+                              GestureDetector(
+                                onTap: () => _initStreamtapePlayer(movie),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 16,
+                                    vertical: 8,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF00E676),
+                                    borderRadius: BorderRadius.circular(14),
+                                  ),
+                                  child: const Text(
+                                    "Retry Stream",
+                                    style: TextStyle(
+                                      color: Color(0xFF03120D),
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          )
+                        : const Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              SizedBox(
+                                width: 38,
+                                height: 38,
+                                child: CircularProgressIndicator(
+                                  color: Color(0xFF00E676),
+                                  strokeWidth: 3.0,
+                                ),
+                              ),
+                              SizedBox(height: 10),
+                              Text(
+                                "Loading HD Stream...",
+                                style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                  ),
+                ),
+              ],
+            ),
+
+          // Top-Left: Clean Minimize / Exit Fullscreen / Back button
+          Positioned(
+            top: 10,
+            left: 12,
+            child: GestureDetector(
+              onTap: _handleBackOrExitFullscreen,
+              child: ClipOval(
+                child: BackdropFilter(
+                  filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.62),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.25),
+                      ),
+                    ),
+                    child: Icon(
+                      _isFullscreen
+                          ? Icons.fullscreen_exit_rounded
+                          : Icons.keyboard_arrow_down_rounded,
+                      color: Colors.white,
+                      size: 24,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+
+          // Top-Right: Clean Settings Icon for Dual Audio Check & Audio Track Switching
+          // (No "Niooo Custom Player" text — completely clean corner with Settings icon!)
+          Positioned(
+            top: 10,
+            right: 12,
+            child: GestureDetector(
+              onTap: _openDualAudioSettingsSheet,
+              child: ClipOval(
+                child: BackdropFilter(
+                  filter: ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+                  child: Container(
+                    width: 36,
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.62),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: const Color(0xFF00E676).withValues(alpha: 0.45),
+                      ),
+                    ),
+                    child: const Icon(
+                      Icons.settings_rounded,
+                      color: Colors.white,
+                      size: 20,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final movie = widget.movie;
+    final mediaOrientation = MediaQuery.of(context).orientation;
+    final bool isEffectiveFullscreen = _isFullscreen ||
+        (!PlatformBridge.isWeb && mediaOrientation == Orientation.landscape);
 
     // Group same-series episodes if this movie is part of a multi-episode series
     final sameSeriesEpisodes = movie.episodeNumber > 0
@@ -661,6 +1047,27 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
         ? movie.embedUrl
         : "https://streamtape.com/e/${movie.id}";
 
+    // In Fullscreen / Landscape mode on Android, expand the video player to fill 100% of the screen
+    if (isEffectiveFullscreen) {
+      return PopScope(
+        canPop: false,
+        onPopInvokedWithResult: (didPop, _) {
+          if (didPop) return;
+          setState(() {
+            _isFullscreen = false;
+            _showControls = true;
+          });
+          PlatformBridge.exitNativeFullscreen();
+        },
+        child: Container(
+          color: Colors.black,
+          width: double.infinity,
+          height: double.infinity,
+          child: _buildVideoPlayerStack(movie, embedSrc, progressRatio),
+        ),
+      );
+    }
+
     return Container(
       color: const Color(0xFF030706),
       child: Column(
@@ -670,334 +1077,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
           // ==============================================================
           AspectRatio(
             aspectRatio: 16 / 9,
-            child: Container(
-              color: Colors.black,
-              child: Stack(
-                fit: StackFit.expand,
-                children: [
-                  if (_useEmbedFrame && PlatformBridge.isWeb)
-                    // Website Environment: Play via Official Streamtape Frame (`https://streamtape.com/e/<id>`)
-                    PlatformBridge.buildEmbeddedPlayer(
-                      viewType: _embedViewType,
-                      embedSrc: embedSrc,
-                      backdropUrl: movie.backdropUrl,
-                      title: movie.title,
-                    )
-                  else if (_directVideoViewType != null &&
-                      _videoElement != null)
-                    // Android Environment (or Direct Stream active): Play via Direct Stream
-                    Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        PlatformBridge.buildCustomVideoSurface(
-                          videoObj: _videoElement,
-                          viewType: _directVideoViewType!,
-                          backdropUrl: movie.backdropUrl,
-                        ),
-                        GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: _toggleControlsVisibility,
-                          child: AnimatedOpacity(
-                            opacity: _showControls ? 1.0 : 0.0,
-                            duration: const Duration(milliseconds: 220),
-                            child: Container(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment.topCenter,
-                                  end: Alignment.bottomCenter,
-                                  colors: [
-                                    Colors.black.withValues(alpha: 0.45),
-                                    Colors.black.withValues(alpha: 0.15),
-                                    Colors.black.withValues(alpha: 0.78),
-                                  ],
-                                  stops: const [0.0, 0.45, 1.0],
-                                ),
-                              ),
-                              child: Stack(
-                                children: [
-                                  Center(
-                                    child: Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.center,
-                                      children: [
-                                        _playerCircleControl(
-                                          icon: Icons.replay_10_rounded,
-                                          size: 42,
-                                          onTap: () => _seekRelative(-10),
-                                        ),
-                                        const SizedBox(width: 24),
-                                        GestureDetector(
-                                          onTap: _togglePlayPause,
-                                          child: Container(
-                                            width: 58,
-                                            height: 58,
-                                            decoration: BoxDecoration(
-                                              shape: BoxShape.circle,
-                                              gradient: const LinearGradient(
-                                                colors: [
-                                                  Color(0xFF00E676),
-                                                  Color(0xFF10B981),
-                                                ],
-                                              ),
-                                              border: Border.all(
-                                                color: Colors.white
-                                                    .withValues(alpha: 0.75),
-                                                width: 1.4,
-                                              ),
-                                              boxShadow: [
-                                                BoxShadow(
-                                                  color:
-                                                      const Color(0xFF00E676)
-                                                          .withValues(
-                                                              alpha: 0.55),
-                                                  blurRadius: 20,
-                                                ),
-                                              ],
-                                            ),
-                                            child: Icon(
-                                              _isPlaying
-                                                  ? Icons.pause_rounded
-                                                  : Icons.play_arrow_rounded,
-                                              color: const Color(0xFF03120D),
-                                              size: 34,
-                                            ),
-                                          ),
-                                        ),
-                                        const SizedBox(width: 24),
-                                        _playerCircleControl(
-                                          icon: Icons.forward_10_rounded,
-                                          size: 42,
-                                          onTap: () => _seekRelative(10),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Positioned(
-                                    left: 12,
-                                    right: 12,
-                                    bottom: 6,
-                                    child: Row(
-                                      children: [
-                                        Text(
-                                          _formatTime(_currentSeconds),
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                        Expanded(
-                                          child: SliderTheme(
-                                            data: SliderTheme.of(context)
-                                                .copyWith(
-                                              trackHeight: 3.0,
-                                              thumbShape:
-                                                  const RoundSliderThumbShape(
-                                                enabledThumbRadius: 6.0,
-                                              ),
-                                              overlayShape:
-                                                  const RoundSliderOverlayShape(
-                                                overlayRadius: 12.0,
-                                              ),
-                                            ),
-                                            child: Slider(
-                                              value: progressRatio,
-                                              activeColor:
-                                                  const Color(0xFF00E676),
-                                              inactiveColor: Colors.white30,
-                                              onChanged: (v) {
-                                                final target =
-                                                    v * _totalSeconds;
-                                                PlatformBridge
-                                                    .setVideoCurrentTime(
-                                                        _videoElement, target);
-                                                setState(() =>
-                                                    _currentSeconds = target);
-                                                _scheduleHideControls();
-                                              },
-                                            ),
-                                          ),
-                                        ),
-                                        Text(
-                                          _formatTime(_totalSeconds),
-                                          style: const TextStyle(
-                                            color: Colors.white70,
-                                            fontSize: 11,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 8),
-                                        GestureDetector(
-                                          onTap: _toggleMute,
-                                          child: Icon(
-                                            _isMuted
-                                                  ? Icons.volume_off_rounded
-                                                  : Icons.volume_up_rounded,
-                                            color: Colors.white,
-                                            size: 20,
-                                          ),
-                                        ),
-                                        const SizedBox(width: 10),
-                                        GestureDetector(
-                                          onTap: _requestFullscreen,
-                                          child: const Icon(
-                                            Icons.fullscreen_rounded,
-                                            color: Colors.white,
-                                            size: 22,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ],
-                    )
-                  else
-                    // Loading / Retry state for Direct Stream
-                    Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        if (movie.backdropUrl.isNotEmpty)
-                          Image.network(
-                            movie.backdropUrl,
-                            fit: BoxFit.cover,
-                            errorBuilder: (_, __, ___) =>
-                                Container(color: const Color(0xFF050D0A)),
-                          ),
-                        Container(
-                          color: Colors.black.withValues(alpha: 0.65),
-                          child: Center(
-                            child: _hasStreamError
-                                ? Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(
-                                        Icons.refresh_rounded,
-                                        color: Color(0xFF00E676),
-                                        size: 36,
-                                      ),
-                                      const SizedBox(height: 8),
-                                      GestureDetector(
-                                        onTap: () =>
-                                            _initStreamtapePlayer(movie),
-                                        child: Container(
-                                          padding: const EdgeInsets.symmetric(
-                                            horizontal: 16,
-                                            vertical: 8,
-                                          ),
-                                          decoration: BoxDecoration(
-                                            color: const Color(0xFF00E676),
-                                            borderRadius:
-                                                BorderRadius.circular(14),
-                                          ),
-                                          child: const Text(
-                                            "Retry Stream",
-                                            style: TextStyle(
-                                              color: Color(0xFF03120D),
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.w800,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  )
-                                : const Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      SizedBox(
-                                        width: 38,
-                                        height: 38,
-                                        child: CircularProgressIndicator(
-                                          color: Color(0xFF00E676),
-                                          strokeWidth: 3.0,
-                                        ),
-                                      ),
-                                      SizedBox(height: 10),
-                                      Text(
-                                        "Loading HD Stream...",
-                                        style: TextStyle(
-                                          color: Colors.white,
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w700,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                          ),
-                        ),
-                      ],
-                    ),
-
-                  // Top-Left: Clean Minimize / Back button
-                  Positioned(
-                    top: 10,
-                    left: 12,
-                    child: GestureDetector(
-                      onTap: widget.onBack,
-                      child: ClipOval(
-                        child: BackdropFilter(
-                          filter:
-                              ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                          child: Container(
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.62),
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.25),
-                              ),
-                            ),
-                            child: const Icon(
-                              Icons.keyboard_arrow_down_rounded,
-                              color: Colors.white,
-                              size: 24,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-
-                  // Top-Right: Clean Settings Icon for Dual Audio Check & Audio Track Switching
-                  // (No "Niooo Custom Player" text — completely clean corner with Settings icon!)
-                  Positioned(
-                    top: 10,
-                    right: 12,
-                    child: GestureDetector(
-                      onTap: _openDualAudioSettingsSheet,
-                      child: ClipOval(
-                        child: BackdropFilter(
-                          filter:
-                              ui.ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-                          child: Container(
-                            width: 36,
-                            height: 36,
-                            decoration: BoxDecoration(
-                              color: Colors.black.withValues(alpha: 0.62),
-                              shape: BoxShape.circle,
-                              border: Border.all(
-                                color: const Color(0xFF00E676)
-                                    .withValues(alpha: 0.45),
-                              ),
-                            ),
-                            child: const Icon(
-                              Icons.settings_rounded,
-                              color: Colors.white,
-                              size: 20,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ),
+            child: _buildVideoPlayerStack(movie, embedSrc, progressRatio),
           ),
 
           // ==============================================================
