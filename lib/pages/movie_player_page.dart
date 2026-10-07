@@ -72,25 +72,43 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
     }
   }
 
+  bool _hasStreamError = false;
+
   void _initStreamtapePlayer(MovieItem movie) {
     final timestamp = DateTime.now().microsecondsSinceEpoch;
     _embedViewType = "niooo-st-embed-${movie.id}-$timestamp";
-    _useDirectStream = false;
+    _useDirectStream = true;
     _isResolvingDirect = true;
+    _hasStreamError = false;
+    _directVideoViewType = null;
+    _currentSeconds = 0.0;
+    _totalSeconds = 100.0;
 
-    final embedSrc = movie.embedUrl.isNotEmpty
-        ? movie.embedUrl
-        : "https://streamtape.com/e/${movie.id}";
-
-    PlatformBridge.registerIframeFactory(_embedViewType, embedSrc);
-
-    // Also resolve direct MP4 stream via Streamtape API (/api/streamtape/direct)
+    // Extract the main direct MP4 stream link invisibly in the background
+    // and play it directly inside our own Niooo M Custom Video Player!
     MovieCatalogData.resolveDirectStreamUrl(movie.id).then((directUrl) {
       if (!mounted || widget.movie.id != movie.id) return;
-      setState(() => _isResolvingDirect = false);
-      if (directUrl != null && directUrl.startsWith("http")) {
+      if (directUrl != null &&
+          directUrl.startsWith("http") &&
+          !directUrl.contains("/e/")) {
         _setupDirectHtml5Video(movie, directUrl);
+        setState(() {
+          _isResolvingDirect = false;
+          _hasStreamError = false;
+        });
+        _switchToDirectPlayer();
+      } else {
+        setState(() {
+          _isResolvingDirect = false;
+          _hasStreamError = true;
+        });
       }
+    }).catchError((_) {
+      if (!mounted || widget.movie.id != movie.id) return;
+      setState(() {
+        _isResolvingDirect = false;
+        _hasStreamError = true;
+      });
     });
   }
 
@@ -281,7 +299,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
       child: Column(
         children: [
           // ==============================================================
-          // 1. HEADERLESS EDGE-TO-EDGE STREAMTAPE VIDEO PLAYER AT VERY TOP
+          // 1. HEADERLESS 100% NIOOO M CUSTOM VIDEO PLAYER (BACKGROUND DIRECT STREAM)
           // ==============================================================
           AspectRatio(
             aspectRatio: 16 / 9,
@@ -290,26 +308,15 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                  if (!_useDirectStream)
-                    // Official Streamtape Cloud Embed Player
-                    PlatformBridge.buildEmbeddedPlayer(
-                      viewType: _embedViewType,
-                      embedSrc: movie.embedUrl.isNotEmpty
-                          ? movie.embedUrl
-                          : "https://streamtape.com/e/${movie.id}",
-                      backdropUrl: movie.backdropUrl,
-                      title: movie.title,
-                    )
-                  else if (_directVideoViewType != null)
-                    // Direct Streamtape MP4 Stream with Custom Glass Controls
+                  if (_directVideoViewType != null && _videoElement != null)
+                    // 100% Custom Niooo M Video Player playing the extracted direct MP4 stream
                     Stack(
                       fit: StackFit.expand,
                       children: [
-                        PlatformBridge.buildEmbeddedPlayer(
+                        PlatformBridge.buildCustomVideoSurface(
+                          videoObj: _videoElement,
                           viewType: _directVideoViewType!,
-                          embedSrc: movie.videoStreamUrl,
                           backdropUrl: movie.backdropUrl,
-                          title: movie.title,
                         ),
                         GestureDetector(
                           behavior: HitTestBehavior.opaque,
@@ -471,6 +478,82 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                           ),
                         ),
                       ],
+                    )
+                  else
+                    // Background Direct Link Extraction State (with poster backdrop & retry if needed)
+                    Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        if (movie.backdropUrl.isNotEmpty)
+                          Image.network(
+                            movie.backdropUrl,
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                Container(color: const Color(0xFF050D0A)),
+                          ),
+                        Container(
+                          color: Colors.black.withValues(alpha: 0.65),
+                          child: Center(
+                            child: _hasStreamError
+                                ? Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(
+                                        Icons.refresh_rounded,
+                                        color: Color(0xFF00E676),
+                                        size: 36,
+                                      ),
+                                      const SizedBox(height: 8),
+                                      GestureDetector(
+                                        onTap: () =>
+                                            _initStreamtapePlayer(movie),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 16,
+                                            vertical: 8,
+                                          ),
+                                          decoration: BoxDecoration(
+                                            color: const Color(0xFF00E676),
+                                            borderRadius:
+                                                BorderRadius.circular(14),
+                                          ),
+                                          child: const Text(
+                                            "Retry Direct HD Stream",
+                                            style: TextStyle(
+                                              color: Color(0xFF03120D),
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.w800,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  )
+                                : const Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      SizedBox(
+                                        width: 38,
+                                        height: 38,
+                                        child: CircularProgressIndicator(
+                                          color: Color(0xFF00E676),
+                                          strokeWidth: 3.0,
+                                        ),
+                                      ),
+                                      SizedBox(height: 10),
+                                      Text(
+                                        "Preparing Niooo M Direct HD Stream...",
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                          ),
+                        ),
+                      ],
                     ),
 
                   // Subtle floating minimize button on top-left (no header bar!)
@@ -504,18 +587,16 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                     ),
                   ),
 
-                  // Streamtape Direct / Cloud Mode Toggle Pill on Top-Right
+                  // Niooo M Custom Player Direct Stream Badge on Top-Right
                   Positioned(
                     top: 10,
                     right: 12,
                     child: GestureDetector(
                       onTap: () {
-                        if (!_useDirectStream &&
-                            _directVideoViewType != null) {
-                          _switchToDirectPlayer();
-                        } else if (_useDirectStream) {
-                          PlatformBridge.pauseVideo(_videoElement);
-                          setState(() => _useDirectStream = false);
+                        if (_hasStreamError) {
+                          _initStreamtapePlayer(movie);
+                        } else {
+                          _toggleControlsVisibility();
                         }
                       },
                       child: ClipRRect(
@@ -540,21 +621,17 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Icon(
-                                  _useDirectStream
-                                      ? Icons.bolt_rounded
-                                      : Icons.cloud_done_rounded,
+                                  _isResolvingDirect
+                                      ? Icons.sync_rounded
+                                      : Icons.bolt_rounded,
                                   color: const Color(0xFF00E676),
                                   size: 14,
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  _useDirectStream
-                                      ? "Direct MP4"
-                                      : (_directVideoViewType != null
-                                          ? "Streamtape HD · Switch Direct"
-                                          : (_isResolvingDirect
-                                              ? "Streamtape Cloud"
-                                              : "Streamtape HD")),
+                                  _isResolvingDirect
+                                      ? "Extracting Direct Link..."
+                                      : "Niooo Custom HD Player",
                                   style: const TextStyle(
                                     color: Color(0xFF00E676),
                                     fontSize: 10.5,
