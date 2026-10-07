@@ -396,50 +396,55 @@ class PlatformBridge {
       mergedMovies.add(movieMap);
     }
 
-    // Also include any custom-added movies from Firebase Firestore that aren't in Streamtape root list
-    firestoreMoviesById.forEach((fsId, fsDoc) {
-      if (!seenIds.contains(fsId) && !deletedIds.contains(fsId)) {
-        seenIds.add(fsId);
-        mergedMovies.insert(0, {
-          "id": fsId,
-          "title": (fsDoc["title"] ?? "Untitled Movie").toString(),
-          "seriesName":
-              (fsDoc["seriesName"] ?? fsDoc["title"] ?? "Untitled Movie")
+    // Strict Live Streamtape API Verification on Android:
+    // If videoFiles.isNotEmpty, ONLY include movies that actively exist in the live Streamtape API (`seenIds`).
+    // Any movie in Firestore that is NOT in `seenIds` has been deleted from Streamtape and must NEVER be shown!
+    if (videoFiles.isEmpty) {
+      firestoreMoviesById.forEach((fsId, fsDoc) {
+        if (!seenIds.contains(fsId) && !deletedIds.contains(fsId)) {
+          seenIds.add(fsId);
+          mergedMovies.insert(0, {
+            "id": fsId,
+            "title": (fsDoc["title"] ?? "Untitled Movie").toString(),
+            "seriesName":
+                (fsDoc["seriesName"] ?? fsDoc["title"] ?? "Untitled Movie")
+                    .toString(),
+            "episodeLabel": (fsDoc["episodeLabel"] ?? "").toString(),
+            "episodeNumber": fsDoc["episodeNumber"] ?? 0,
+            "tagline": (fsDoc["tagline"] ??
+                    "Streamed live from your Streamtape Cloud Account.")
+                .toString(),
+            "synopsis": (fsDoc["synopsis"] ??
+                    "Watch in HD directly from your Streamtape cloud library.")
+                .toString(),
+            "posterUrl": FirebaseStreamtapeService.cleanCanonicalImageUrl(
+              (fsDoc["posterUrl"] ??
+                      "https://thumb.tapecontent.net/thumb/$fsId/thumb.jpg")
                   .toString(),
-          "episodeLabel": (fsDoc["episodeLabel"] ?? "").toString(),
-          "episodeNumber": fsDoc["episodeNumber"] ?? 0,
-          "tagline": (fsDoc["tagline"] ??
-                  "Streamed live from your Streamtape Cloud Account.")
-              .toString(),
-          "synopsis": (fsDoc["synopsis"] ??
-                  "Watch in HD directly from your Streamtape cloud library.")
-              .toString(),
-          "posterUrl": FirebaseStreamtapeService.cleanCanonicalImageUrl(
-            (fsDoc["posterUrl"] ??
-                    "https://thumb.tapecontent.net/thumb/$fsId/thumb.jpg")
-                .toString(),
-          ),
-          "backdropUrl": FirebaseStreamtapeService.cleanCanonicalImageUrl(
-            (fsDoc["backdropUrl"] ??
-                    fsDoc["posterUrl"] ??
-                    "https://thumb.tapecontent.net/thumb/$fsId/thumb.jpg")
-                .toString(),
-          ),
-          "embedUrl": "https://streamtape.com/e/$fsId",
-          "videoStreamUrl": "/api/streamtape/direct?file=$fsId",
-          "rating": fsDoc["rating"] ?? 9.4,
-          "releaseYear": fsDoc["releaseYear"] ?? 2026,
-          "duration": (fsDoc["duration"] ?? "HD Stream").toString(),
-          "maturityRating": "HD",
-          "qualityBadge": (fsDoc["qualityBadge"] ?? "1080p Full HD").toString(),
-          "genres": ["Action", "Cinema"],
-          "director": "Niooo Streamtape Cloud",
-          "isFeatured": fsDoc["isFeatured"] ?? true,
-          "isTrending": fsDoc["isTrending"] ?? true,
-          "isNewRelease": fsDoc["isNewRelease"] ?? true,
-        });
-      }
-    });
+            ),
+            "backdropUrl": FirebaseStreamtapeService.cleanCanonicalImageUrl(
+              (fsDoc["backdropUrl"] ??
+                      fsDoc["posterUrl"] ??
+                      "https://thumb.tapecontent.net/thumb/$fsId/thumb.jpg")
+                  .toString(),
+            ),
+            "embedUrl": "https://streamtape.com/e/$fsId",
+            "videoStreamUrl": "/api/streamtape/direct?file=$fsId",
+            "rating": fsDoc["rating"] ?? 9.4,
+            "releaseYear": fsDoc["releaseYear"] ?? 2026,
+            "duration": (fsDoc["duration"] ?? "HD Stream").toString(),
+            "maturityRating": "HD",
+            "qualityBadge":
+                (fsDoc["qualityBadge"] ?? "1080p Full HD").toString(),
+            "genres": ["Action", "Cinema"],
+            "director": "Niooo Streamtape Cloud",
+            "isFeatured": fsDoc["isFeatured"] ?? true,
+            "isTrending": fsDoc["isTrending"] ?? true,
+            "isNewRelease": fsDoc["isNewRelease"] ?? true,
+          });
+        }
+      });
+    }
 
     // Sort standalone movies first, then series in episode order
     mergedMovies.sort((a, b) {
@@ -913,4 +918,12 @@ class PlatformBridge {
   }) {
     return _buildLoadingBackdrop(backdropUrl);
   }
+
+  static void switchVideoAudioTrack(Object? videoObj, int trackIndex) {
+    if (videoObj is VideoPlayerController && videoObj.value.isInitialized) {
+      final pos = videoObj.value.position;
+      videoObj.seekTo(pos);
+    }
+  }
 }
+
