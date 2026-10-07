@@ -44,9 +44,9 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
   @override
   Widget build(BuildContext context) {
     final featuredList = widget.movies.where((m) => m.isFeatured).toList();
-    final heroMovie = featuredList.isNotEmpty
+    final MovieItem? heroMovie = featuredList.isNotEmpty
         ? featuredList[_featuredIndex % featuredList.length]
-        : widget.movies.first;
+        : (widget.movies.isNotEmpty ? widget.movies.first : null);
 
     final filteredMovies = _selectedGenre == "All"
         ? widget.movies
@@ -128,8 +128,10 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                   ),
                   child: Text(
                     widget.isSyncingStreamtape
-                        ? "SYNCING..."
-                        : "STREAMTAPE (${widget.movies.length})",
+                        ? "LIVE SYNCING..."
+                        : (MovieCatalogData.isOfflineMode
+                            ? "OFFLINE CACHE (${widget.movies.length})"
+                            : "STREAMTAPE (${widget.movies.length})"),
                     style: const TextStyle(
                       color: Color(0xFF00E676),
                       fontSize: 9.5,
@@ -157,10 +159,75 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
             ),
           ),
           Expanded(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(0, 4, 0, 96),
-              children: [
-                _buildHeroBanner(heroMovie, featuredList),
+            child: heroMovie == null
+                ? Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(28),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const SizedBox(
+                            width: 44,
+                            height: 44,
+                            child: CircularProgressIndicator(
+                              color: Color(0xFF00E676),
+                              strokeWidth: 3.2,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          const Text(
+                            "Syncing Verified Movies from Streamtape Cloud...",
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Color(0xFFF0FDF4),
+                              fontSize: 15,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          const Text(
+                            "Checking live Streamtape API & Firebase Firestore in real time",
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              color: Color(0xFF94A3B8),
+                              fontSize: 12.5,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          GestureDetector(
+                            onTap: widget.onRefreshStreamtape,
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 18,
+                                vertical: 9,
+                              ),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF00E676)
+                                    .withValues(alpha: 0.16),
+                                borderRadius: BorderRadius.circular(14),
+                                border: Border.all(
+                                  color: const Color(0xFF00E676)
+                                      .withValues(alpha: 0.45),
+                                ),
+                              ),
+                              child: const Text(
+                                "Retry Live Connection",
+                                style: TextStyle(
+                                  color: Color(0xFF00E676),
+                                  fontSize: 12.5,
+                                  fontWeight: FontWeight.w800,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                : ListView(
+                    padding: const EdgeInsets.fromLTRB(0, 4, 0, 96),
+                    children: [
+                      _buildHeroBanner(heroMovie, featuredList),
                 const SizedBox(height: 16),
                 SingleChildScrollView(
                   scrollDirection: Axis.horizontal,
