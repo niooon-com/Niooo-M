@@ -150,7 +150,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
 
     final String embedSrc = movie.embedUrl.isNotEmpty
         ? movie.embedUrl
-        : "https://streamtape.com/e/${movie.id}";
+        : "https://streamtape.com/e/${movie.streamtapeId.isNotEmpty ? movie.streamtapeId : movie.id}/";
 
     if (PlatformBridge.isWeb) {
       PlatformBridge.registerIframeFactory(_embedViewType, embedSrc);
@@ -171,7 +171,13 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
       _hasStreamError = false;
     });
 
-    MovieCatalogData.resolveDirectStreamUrl(movie.id).then((directUrl) {
+    final String directTarget = movie.streamtapeId.isNotEmpty
+        ? movie.streamtapeId
+        : (movie.embedUrl.isNotEmpty
+            ? movie.embedUrl
+            : (movie.downloadUrl.isNotEmpty ? movie.downloadUrl : movie.id));
+
+    MovieCatalogData.resolveDirectStreamUrl(directTarget).then((directUrl) {
       if (!mounted || widget.movie.id != movie.id) return;
       if (directUrl != null &&
           directUrl.startsWith("http") &&
@@ -668,9 +674,12 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
 
   void _handleShareTap() {
     widget.onShareMovie();
-    PlatformBridge.copyToClipboard(
-      "https://streamtape.com/v/${widget.movie.id}",
-    );
+    final shareLink = widget.movie.downloadUrl.isNotEmpty
+        ? widget.movie.downloadUrl
+        : (widget.movie.embedUrl.isNotEmpty
+            ? widget.movie.embedUrl
+            : "https://streamtape.com/e/${widget.movie.streamtapeId}");
+    PlatformBridge.copyToClipboard(shareLink);
     setState(() => _showShareBanner = true);
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted) setState(() => _showShareBanner = false);
@@ -1071,14 +1080,20 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
         (!PlatformBridge.isWeb && mediaOrientation == Orientation.landscape);
 
     // Group same-series episodes if this movie is part of a multi-episode series
-    final sameSeriesEpisodes = movie.episodeNumber > 0
+    final sameSeriesEpisodes = movie.isEpisode
         ? (widget.allMovies
             .where((m) =>
-                m.seriesName.toLowerCase() ==
-                    movie.seriesName.toLowerCase() &&
-                m.episodeNumber > 0)
+                m.isEpisode &&
+                ((movie.seriesId.isNotEmpty && m.seriesId == movie.seriesId) ||
+                    (movie.seriesName.isNotEmpty &&
+                        m.seriesName.toLowerCase() ==
+                            movie.seriesName.toLowerCase())))
             .toList()
-          ..sort((a, b) => a.episodeNumber.compareTo(b.episodeNumber)))
+          ..sort((a, b) {
+            final sCmp = a.seasonNumber.compareTo(b.seasonNumber);
+            if (sCmp != 0) return sCmp;
+            return a.episodeNumber.compareTo(b.episodeNumber);
+          }))
         : <MovieItem>[];
 
     final otherMovies =
@@ -1574,7 +1589,9 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                                   ),
                                 ),
                                 child: Text(
-                                  "EP ${ep.episodeNumber.toString().padLeft(2, '0')}",
+                                  ep.episodeLabel.isNotEmpty
+                                      ? ep.episodeLabel
+                                      : "EP ${ep.episodeNumber.toString().padLeft(2, '0')}",
                                   style: TextStyle(
                                     color: isCurrent
                                         ? const Color(0xFF03120D)
@@ -1817,7 +1834,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                       ),
                       const SizedBox(height: 8),
                       Text(
-                        "Streamtape ID: ${movie.id} · Size: ${movie.duration} · Director: ${movie.director}",
+                        "Language: ${movie.language} · Size: ${movie.duration} · Year: ${movie.releaseYear}",
                         style: const TextStyle(
                           color: Color(0xFF00E676),
                           fontSize: 11.5,
@@ -1831,7 +1848,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                 const SizedBox(height: 22),
 
                 // ==========================================================
-                // 3. OTHER STREAM-READY MOVIES FROM STREAMTAPE ACCOUNT
+                // 3. OTHER STREAM-READY MOVIES FROM CATALOG
                 // ==========================================================
                 Row(
                   children: [
@@ -1843,7 +1860,7 @@ class _MoviePlayerPageState extends State<MoviePlayerPage> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        "More Movies from Streamtape (${otherMovies.length})",
+                        "More from Niooo M Catalog (${otherMovies.length})",
                         style: const TextStyle(
                           color: Color(0xFFF0FDF4),
                           fontSize: 17,
