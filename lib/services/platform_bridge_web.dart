@@ -1,6 +1,5 @@
 // ignore: avoid_web_libraries_in_flutter
 import "dart:html" as html;
-import "dart:convert";
 // ignore: avoid_web_libraries_in_flutter
 import "dart:js_util" as js_util;
 // ignore: undefined_prefixed_name
@@ -10,62 +9,22 @@ import "package:flutter/material.dart";
 class PlatformBridge {
   static bool get isWeb => true;
 
-  static Future<String> httpGetString(String url) async {
-    return await html.HttpRequest.getString(url);
-  }
-
-  static Future<int> httpPostJson(
-    String url,
-    Map<String, dynamic> payload,
-  ) async {
-    final req = await html.HttpRequest.request(
-      url,
-      method: "POST",
-      requestHeaders: {"Content-Type": "application/json"},
-      sendData: jsonEncode(payload),
-    );
-    return req.status ?? 0;
-  }
-
-  static Future<String?> httpPostJsonResponse(
-    String url,
-    Map<String, dynamic> payload,
-  ) async {
-    final req = await html.HttpRequest.request(
-      url,
-      method: "POST",
-      requestHeaders: {"Content-Type": "application/json"},
-      sendData: jsonEncode(payload),
-    );
-    if (req.status == 200) {
-      return req.responseText;
-    }
-    return null;
-  }
-
-  static Future<String?> httpGetDirectUrl(String url) async {
-    try {
-      return await html.HttpRequest.getString(url);
-    } catch (_) {
-      return null;
-    }
-  }
-
-  static Future<bool> httpPatchDirectJson(
-    String url,
-    Map<String, dynamic> payload,
-  ) async {
-    try {
+  static Future<String> httpGetString(
+    String url, {
+    Map<String, String>? headers,
+  }) async {
+    if (headers != null && headers.isNotEmpty) {
       final req = await html.HttpRequest.request(
         url,
-        method: "PATCH",
-        requestHeaders: {"Content-Type": "application/json"},
-        sendData: jsonEncode(payload),
+        method: "GET",
+        requestHeaders: headers,
       );
-      return (req.status ?? 0) >= 200 && (req.status ?? 0) < 300;
-    } catch (_) {
-      return false;
+      if (req.status != null && req.status! >= 200 && req.status! < 300) {
+        return req.responseText ?? "";
+      }
+      throw Exception("HTTP ${req.status} for $url");
     }
+    return await html.HttpRequest.getString(url);
   }
 
   static String? getLocalStorage(String key) {
@@ -83,37 +42,6 @@ class PlatformBridge {
       } else {
         html.window.localStorage[key] = value;
       }
-    } catch (_) {}
-  }
-
-  static void listenBridgeSync(void Function(String json) onSync) {
-    try {
-      html.window.addEventListener("niooo-sync", (html.Event event) {
-        try {
-          final detail = js_util.getProperty<Object?>(event, "detail");
-          if (detail is String && detail.isNotEmpty) {
-            onSync(detail);
-          }
-        } catch (_) {}
-      });
-    } catch (_) {}
-  }
-
-  static String? getInitialBridgeState() {
-    try {
-      final raw = js_util.getProperty<Object?>(html.window, "__NIOOO_STATE__");
-      if (raw is String && raw.isNotEmpty) {
-        return raw;
-      }
-    } catch (_) {}
-    return null;
-  }
-
-  static void sendBridgeCommand(Map<String, dynamic> payload) {
-    try {
-      final detail = jsonEncode(payload);
-      final event = html.CustomEvent("niooo-cmd", detail: detail);
-      html.window.dispatchEvent(event);
     } catch (_) {}
   }
 
@@ -283,9 +211,13 @@ class PlatformBridge {
 
   static void disposeVideo(Object? videoObj) {
     setScreenWakelock(false);
+    exitNativeFullscreen();
     if (videoObj is html.VideoElement) {
-      videoObj.pause();
-      videoObj.src = "";
+      try {
+        videoObj.pause();
+        videoObj.removeAttribute("src");
+        videoObj.load();
+      } catch (_) {}
     }
   }
 
@@ -307,20 +239,25 @@ class PlatformBridge {
   }
 
   static void switchVideoAudioTrack(Object? videoObj, int trackIndex) {
-    if (videoObj == null) return;
-    try {
-      final audioTracks = js_util.getProperty<Object?>(videoObj, "audioTracks");
-      if (audioTracks != null) {
-        final len =
-            js_util.getProperty<int?>(audioTracks, "length") ?? 0;
-        for (int i = 0; i < len; i++) {
-          final track = js_util.callMethod<Object?>(audioTracks, "item", [i]);
-          if (track != null) {
-            js_util.setProperty(track, "enabled", i == trackIndex);
+    if (videoObj is html.VideoElement) {
+      try {
+        final audioTracks =
+            js_util.getProperty<Object?>(videoObj, "audioTracks");
+        if (audioTracks != null) {
+          final length =
+              js_util.getProperty<int?>(audioTracks, "length") ?? 0;
+          for (int i = 0; i < length; i++) {
+            final track = js_util.callMethod<Object?>(
+              audioTracks,
+              "item",
+              [i],
+            );
+            if (track != null) {
+              js_util.setProperty(track, "enabled", i == trackIndex);
+            }
           }
         }
-      }
-    } catch (_) {}
+      } catch (_) {}
+    }
   }
 }
-
