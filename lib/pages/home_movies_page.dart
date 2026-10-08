@@ -1,25 +1,31 @@
+import "dart:async";
+import "dart:ui";
 import "package:flutter/material.dart";
 import "../models/movie_models.dart";
 import "../widgets/glass_container.dart";
 
 class HomeMoviesPage extends StatefulWidget {
   final List<MovieItem> movies;
+  final List<SeriesCatalogItem> seriesList;
   final Set<String> watchlistIds;
-  final bool isSyncingStreamtape;
   final ValueChanged<MovieItem> onPlayMovie;
   final ValueChanged<String> onToggleWatchlist;
-  final VoidCallback onOpenSearch;
-  final VoidCallback onRefreshStreamtape;
+  final VoidCallback onOpenWatchlistTab;
+  final VoidCallback onOpenProfileTab;
+  final VoidCallback? onRefreshStreamtape;
+  final bool isSyncingStreamtape;
 
   const HomeMoviesPage({
     super.key,
     required this.movies,
+    this.seriesList = const [],
     required this.watchlistIds,
-    this.isSyncingStreamtape = false,
     required this.onPlayMovie,
     required this.onToggleWatchlist,
-    required this.onOpenSearch,
-    required this.onRefreshStreamtape,
+    required this.onOpenWatchlistTab,
+    required this.onOpenProfileTab,
+    this.onRefreshStreamtape,
+    this.isSyncingStreamtape = false,
   });
 
   @override
@@ -27,47 +33,159 @@ class HomeMoviesPage extends StatefulWidget {
 }
 
 class _HomeMoviesPageState extends State<HomeMoviesPage> {
-  String _selectedGenre = "All";
+  String _selectedCategory = "All";
   int _featuredIndex = 0;
+  final Map<String, int> _selectedSeasonBySeries = {};
+  Timer? _heroAutoSlideTimer;
 
-  static const List<String> _genres = [
-    "All",
-    "Action",
-    "Sci-Fi",
-    "Thriller",
-    "Romance",
-    "Drama",
-    "Crime",
-    "Comedy",
-  ];
+  List<String> _buildCategories() {
+    final Set<String> dynamicLangs = {};
+    for (final m in widget.movies) {
+      if (m.language.trim().isNotEmpty) {
+        dynamicLangs.add(m.language.trim());
+      }
+    }
+    return [
+      "All",
+      "Movies",
+      "Web Series",
+      ...dynamicLangs,
+      "Action",
+      "Romance",
+      "Drama",
+    ];
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _heroAutoSlideTimer = Timer.periodic(const Duration(seconds: 6), (_) {
+      if (!mounted) return;
+      final featured = widget.movies.where((m) => m.isFeatured).toList();
+      if (featured.length > 1) {
+        setState(() {
+          _featuredIndex = (_featuredIndex + 1) % featured.length;
+        });
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _heroAutoSlideTimer?.cancel();
+    super.dispose();
+  }
+
+  bool _matchesSelectedCategory(MovieItem m) {
+    if (_selectedCategory == "All") return true;
+    if (_selectedCategory == "Movies") return !m.isEpisode;
+    if (_selectedCategory == "Web Series") return m.isEpisode;
+    if (m.language.toLowerCase().contains(_selectedCategory.toLowerCase())) {
+      return true;
+    }
+    return m.genres.any(
+      (g) => g.toLowerCase() == _selectedCategory.toLowerCase(),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    if (widget.movies.isEmpty) {
+      return GlassContainer(
+        margin: EdgeInsets.zero,
+        borderRadius: 0,
+        blur: 28,
+        border: const Border(),
+        boxShadow: const [],
+        backgroundColor: const Color(0xFF050C0A).withValues(alpha: 0.35),
+        child: Center(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(
+                  width: 44,
+                  height: 44,
+                  child: CircularProgressIndicator(
+                    color: Color(0xFF00E676),
+                    strokeWidth: 3.2,
+                  ),
+                ),
+                const SizedBox(height: 18),
+                Text(
+                  widget.isSyncingStreamtape
+                      ? "Loading Live Catalog..."
+                      : "Connecting to Niooo M Catalog...",
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: Color(0xFFF0FDF4),
+                    fontSize: 17,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                const Text(
+                  "Fetching real-time movies, posters, languages, and web series.",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: Color(0xFF94A3B8),
+                    fontSize: 12.5,
+                    height: 1.4,
+                  ),
+                ),
+                if (widget.onRefreshStreamtape != null) ...[
+                  const SizedBox(height: 16),
+                  GestureDetector(
+                    onTap: widget.onRefreshStreamtape,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 18,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF00E676), Color(0xFF10B981)],
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                      child: const Text(
+                        "Refresh Live Catalog",
+                        style: TextStyle(
+                          color: Color(0xFF03120D),
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w900,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    final categories = _buildCategories();
     final featuredList = widget.movies.where((m) => m.isFeatured).toList();
-    final MovieItem? heroMovie = featuredList.isNotEmpty
+    final MovieItem heroMovie = featuredList.isNotEmpty
         ? featuredList[_featuredIndex % featuredList.length]
-        : (widget.movies.isNotEmpty ? widget.movies.first : null);
+        : widget.movies.first;
 
-    final filteredMovies = _selectedGenre == "All"
-        ? widget.movies
-        : widget.movies
-            .where((m) => m.genres.contains(_selectedGenre))
-            .toList();
-
+    final filteredItems =
+        widget.movies.where(_matchesSelectedCategory).toList();
     final standaloneMovies =
-        filteredMovies.where((m) => m.episodeNumber == 0).toList();
-    final safedSagarEpisodes = filteredMovies
-        .where(
-            (m) => m.seriesName.toLowerCase().contains("operation safed sagar"))
-        .toList()
-      ..sort((a, b) => a.episodeNumber.compareTo(b.episodeNumber));
-    final stickyLoveEpisodes = filteredMovies
-        .where((m) => m.seriesName.toLowerCase().contains("our sticky love"))
-        .toList()
-      ..sort((a, b) => a.episodeNumber.compareTo(b.episodeNumber));
+        filteredItems.where((m) => !m.isEpisode).toList();
 
     final continueWatching =
-        widget.movies.where((m) => m.watchProgress > 0.0).toList();
+        widget.movies.where((m) => m.watchProgress > 0.01).toList();
+
+    // Build series list from API SeriesCatalogItem or group episodes dynamically
+    final List<SeriesCatalogItem> activeSeriesList =
+        widget.seriesList.isNotEmpty
+            ? widget.seriesList
+            : _buildFallbackSeriesFromEpisodes(widget.movies);
 
     return GlassContainer(
       margin: EdgeInsets.zero,
@@ -76,243 +194,198 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
       border: const Border(),
       boxShadow: const [],
       backgroundColor: const Color(0xFF050C0A).withValues(alpha: 0.35),
-      child: Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.fromLTRB(18, 14, 18, 10),
-            child: Row(
-              children: [
-                Container(
-                  width: 36,
-                  height: 36,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF00E676), Color(0xFF047857)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFF00E676).withValues(alpha: 0.35),
-                        blurRadius: 12,
-                      ),
-                    ],
-                  ),
-                  child: const Icon(
-                    Icons.movie_filter_rounded,
-                    color: Color(0xFF03120D),
-                    size: 20,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                const Text(
-                  "niooo",
-                  style: TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: -0.6,
-                    color: Color(0xFFF0FDF4),
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2.5),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF00E676).withValues(alpha: 0.16),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                      color: const Color(0xFF00E676).withValues(alpha: 0.45),
-                    ),
-                  ),
-                  child: Text(
-                    widget.isSyncingStreamtape
-                        ? "LIVE SYNCING..."
-                        : (MovieCatalogData.isOfflineMode
-                            ? "OFFLINE CACHE (${widget.movies.length})"
-                            : "STREAMTAPE (${widget.movies.length})"),
-                    style: const TextStyle(
-                      color: Color(0xFF00E676),
-                      fontSize: 9.5,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 0.5,
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                GlassIconButton(
-                  icon: Icons.cloud_sync_rounded,
-                  tooltip: "Sync Streamtape Library",
-                  size: 38,
-                  color: const Color(0xFF00E676),
-                  onTap: widget.onRefreshStreamtape,
-                ),
-                const SizedBox(width: 8),
-                GlassIconButton(
-                  icon: Icons.search_rounded,
-                  tooltip: "Search Movies",
-                  size: 38,
-                  onTap: widget.onOpenSearch,
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: heroMovie == null
-                ? Center(
-                    child: Padding(
-                      padding: const EdgeInsets.all(28),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const SizedBox(
-                            width: 44,
-                            height: 44,
-                            child: CircularProgressIndicator(
-                              color: Color(0xFF00E676),
-                              strokeWidth: 3.2,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          const Text(
-                            "Syncing Verified Movies from Streamtape Cloud...",
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Color(0xFFF0FDF4),
-                              fontSize: 15,
-                              fontWeight: FontWeight.w800,
-                            ),
-                          ),
-                          const SizedBox(height: 6),
-                          const Text(
-                            "Checking live Streamtape API & Firebase Firestore in real time",
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              color: Color(0xFF94A3B8),
-                              fontSize: 12.5,
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          GestureDetector(
-                            onTap: widget.onRefreshStreamtape,
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 18,
-                                vertical: 9,
-                              ),
-                              decoration: BoxDecoration(
-                                color: const Color(0xFF00E676)
-                                    .withValues(alpha: 0.16),
-                                borderRadius: BorderRadius.circular(14),
-                                border: Border.all(
-                                  color: const Color(0xFF00E676)
-                                      .withValues(alpha: 0.45),
-                                ),
-                              ),
-                              child: const Text(
-                                "Retry Live Connection",
-                                style: TextStyle(
-                                  color: Color(0xFF00E676),
-                                  fontSize: 12.5,
-                                  fontWeight: FontWeight.w800,
-                                ),
-                              ),
-                            ),
-                          ),
+      child: CustomScrollView(
+        physics: const BouncingScrollPhysics(),
+        slivers: [
+          // Top App Bar
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(18, 12, 18, 10),
+              child: Row(
+                children: [
+                  Container(
+                    width: 38,
+                    height: 38,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: const LinearGradient(
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                        colors: [
+                          Color(0xFF00E676),
+                          Color(0xFF10B981),
+                          Color(0xFF047857),
                         ],
                       ),
-                    ),
-                  )
-                : ListView(
-                    padding: const EdgeInsets.fromLTRB(0, 4, 0, 96),
-                    children: [
-                      _buildHeroBanner(heroMovie, featuredList),
-                const SizedBox(height: 16),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
-                    children: _genres.map((genre) {
-                      final active = _selectedGenre == genre;
-                      return GestureDetector(
-                        onTap: () => setState(() => _selectedGenre = genre),
-                        child: AnimatedContainer(
-                          duration: const Duration(milliseconds: 160),
-                          margin: const EdgeInsets.only(right: 8),
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 16,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            gradient: active
-                                ? const LinearGradient(
-                                    colors: [
-                                      Color(0xFF00E676),
-                                      Color(0xFF10B981),
-                                      Color(0xFF047857),
-                                    ],
-                                  )
-                                : LinearGradient(
-                                    colors: [
-                                      Colors.white.withValues(alpha: 0.08),
-                                      const Color(0xFF091714)
-                                          .withValues(alpha: 0.75),
-                                    ],
-                                  ),
-                            borderRadius: BorderRadius.circular(22),
-                            border: Border.all(
-                              color: active
-                                  ? Colors.white.withValues(alpha: 0.55)
-                                  : const Color(0xFF00E676)
-                                      .withValues(alpha: 0.2),
-                            ),
-                          ),
-                          child: Text(
-                            genre,
-                            style: TextStyle(
-                              color: active
-                                  ? const Color(0xFF03120D)
-                                  : const Color(0xFF94A3B8),
-                              fontWeight:
-                                  active ? FontWeight.w800 : FontWeight.w600,
-                              fontSize: 12.5,
-                            ),
-                          ),
+                      boxShadow: [
+                        BoxShadow(
+                          color:
+                              const Color(0xFF00E676).withValues(alpha: 0.4),
+                          blurRadius: 14,
                         ),
-                      );
-                    }).toList(),
+                      ],
+                    ),
+                    child: const Icon(
+                      Icons.movie_filter_rounded,
+                      color: Color(0xFF03120D),
+                      size: 21,
+                    ),
                   ),
-                ),
-                if (continueWatching.isNotEmpty) ...[
-                  const SizedBox(height: 22),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      "niooo",
+                      style: TextStyle(
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFFF0FDF4),
+                        letterSpacing: -0.6,
+                      ),
+                    ),
+                  ),
+                  if (widget.onRefreshStreamtape != null) ...[
+                    GlassIconButton(
+                      icon: widget.isSyncingStreamtape
+                          ? Icons.sync_rounded
+                          : Icons.cloud_sync_rounded,
+                      tooltip: "Refresh Catalog",
+                      size: 38,
+                      isAccent: widget.isSyncingStreamtape,
+                      color: const Color(0xFF00E676),
+                      onTap: widget.onRefreshStreamtape,
+                    ),
+                    const SizedBox(width: 8),
+                  ],
+                  GlassIconButton(
+                    icon: Icons.bookmark_border_rounded,
+                    tooltip: "My Watchlist",
+                    size: 38,
+                    onTap: widget.onOpenWatchlistTab,
+                  ),
+                  const SizedBox(width: 8),
+                  GlassIconButton(
+                    icon: Icons.person_outline_rounded,
+                    tooltip: "Profile",
+                    size: 38,
+                    isAccent: true,
+                    color: const Color(0xFF00E676),
+                    onTap: widget.onOpenProfileTab,
+                  ),
+                ],
+              ),
+            ),
+          ),
+
+          // Category & Language Filter Pills
+          SliverToBoxAdapter(
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+              child: Row(
+                children: categories.map((cat) {
+                  final isSelected = _selectedCategory == cat;
+                  return GestureDetector(
+                    onTap: () => setState(() => _selectedCategory = cat),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 180),
+                      margin: const EdgeInsets.only(right: 8),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        gradient: isSelected
+                            ? const LinearGradient(
+                                colors: [
+                                  Color(0xFF00E676),
+                                  Color(0xFF10B981),
+                                  Color(0xFF047857),
+                                ],
+                              )
+                            : LinearGradient(
+                                colors: [
+                                  Colors.white.withValues(alpha: 0.08),
+                                  const Color(0xFF0A1815)
+                                      .withValues(alpha: 0.72),
+                                ],
+                              ),
+                        borderRadius: BorderRadius.circular(22),
+                        border: Border.all(
+                          color: isSelected
+                              ? Colors.white.withValues(alpha: 0.5)
+                              : const Color(0xFF00E676).withValues(alpha: 0.22),
+                        ),
+                      ),
+                      child: Text(
+                        cat,
+                        style: TextStyle(
+                          color: isSelected
+                              ? const Color(0xFF03120D)
+                              : const Color(0xFFCBD5E1),
+                          fontSize: 12.5,
+                          fontWeight:
+                              isSelected ? FontWeight.w800 : FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+          ),
+
+          // Hero Featured Banner
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(0, 10, 0, 6),
+              child: _buildHeroBanner(heroMovie, featuredList),
+            ),
+          ),
+
+          // Continue Watching Section
+          if (continueWatching.isNotEmpty)
+            SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 16),
                   _buildSectionHeader(
                     "Continue Watching",
-                    "Tap any Streamtape movie to resume instant playback",
+                    "Pick up right where you left off",
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   SizedBox(
-                    height: 148,
+                    height: 158,
                     child: ListView.builder(
                       scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.symmetric(horizontal: 16),
                       itemCount: continueWatching.length,
                       itemBuilder: (context, index) {
                         return _buildContinueWatchingCard(
-                            continueWatching[index]);
+                          continueWatching[index],
+                        );
                       },
                     ),
                   ),
                 ],
-                if (standaloneMovies.isNotEmpty) ...[
-                  const SizedBox(height: 22),
+              ),
+            ),
+
+          // Movies Horizontal Row (`/api/public/v1/movies`)
+          if (standaloneMovies.isNotEmpty &&
+              _selectedCategory != "Web Series")
+            SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 20),
                   _buildSectionHeader(
-                    "Blockbuster Movies on Streamtape",
-                    "Full-length feature films from your cloud library",
+                    "Featured Movies (${standaloneMovies.length})",
+                    "Official posters, languages & HD streams",
                   ),
                   const SizedBox(height: 12),
                   SizedBox(
-                    height: 258,
+                    height: 268,
                     child: ListView.builder(
                       scrollDirection: Axis.horizontal,
                       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -323,63 +396,216 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                     ),
                   ),
                 ],
-                if (safedSagarEpisodes.isNotEmpty) ...[
-                  const SizedBox(height: 22),
+              ),
+            ),
+
+          // Dynamic Series & Seasons Management (`/api/public/v1/series` + `/api/public/v1/series/{id}`)
+          if (activeSeriesList.isNotEmpty && _selectedCategory != "Movies")
+            SliverToBoxAdapter(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: activeSeriesList.map((series) {
+                  return _buildSeriesSection(series);
+                }).toList(),
+              ),
+            ),
+
+          // Full Catalog List
+          SliverToBoxAdapter(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(0, 22, 0, 110),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
                   _buildSectionHeader(
-                    "Operation Safed Sagar (Season 1)",
-                    "All ${safedSagarEpisodes.length} episodes automatically sorted (EP 01 – EP 06)",
+                    "All Catalog Videos (${filteredItems.length})",
+                    "Real-time movies & episodes from Niooo M API",
                   ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    height: 258,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: safedSagarEpisodes.length,
-                      itemBuilder: (context, index) {
-                        return _buildPosterCard(safedSagarEpisodes[index]);
-                      },
+                  const SizedBox(height: 10),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    child: Column(
+                      children: filteredItems
+                          .map((movie) => _buildWideCatalogRow(movie))
+                          .toList(),
                     ),
                   ),
                 ],
-                if (stickyLoveEpisodes.isNotEmpty) ...[
-                  const SizedBox(height: 22),
-                  _buildSectionHeader(
-                    "Our Sticky Love (Season 1)",
-                    "All ${stickyLoveEpisodes.length} episodes automatically sorted (EP 01 – EP 09)",
-                  ),
-                  const SizedBox(height: 12),
-                  SizedBox(
-                    height: 258,
-                    child: ListView.builder(
-                      scrollDirection: Axis.horizontal,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: stickyLoveEpisodes.length,
-                      itemBuilder: (context, index) {
-                        return _buildPosterCard(stickyLoveEpisodes[index]);
-                      },
-                    ),
-                  ),
-                ],
-                const SizedBox(height: 22),
-                _buildSectionHeader(
-                  "All Streamtape Account Movies (${filteredMovies.length})",
-                  "Automatically synced and organized from your Streamtape account",
-                ),
-                const SizedBox(height: 10),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    children: filteredMovies
-                        .map((movie) => _buildWideCatalogRow(movie))
-                        .toList(),
-                  ),
-                ),
-              ],
+              ),
             ),
           ),
         ],
       ),
+    );
+  }
+
+  List<SeriesCatalogItem> _buildFallbackSeriesFromEpisodes(
+    List<MovieItem> all,
+  ) {
+    final Map<String, List<MovieItem>> bySeries = {};
+    for (final m in all) {
+      if (m.isEpisode && m.seriesName.isNotEmpty) {
+        bySeries.putIfAbsent(m.seriesName, () => []).add(m);
+      }
+    }
+    final List<SeriesCatalogItem> result = [];
+    bySeries.forEach((name, eps) {
+      eps.sort((a, b) => a.episodeNumber.compareTo(b.episodeNumber));
+      final first = eps.first;
+      result.add(
+        SeriesCatalogItem(
+          id: first.seriesId.isNotEmpty ? first.seriesId : name,
+          title: name,
+          posterUrl: first.posterUrl,
+          description: first.synopsis,
+          releaseYear: first.releaseYear,
+          genres: first.genres,
+          language: first.language,
+          episodeCount: eps.length,
+          seasonCount: 1,
+          seasons: [
+            SeriesSeasonItem(
+              season: 1,
+              posterUrl: first.posterUrl,
+              episodeCount: eps.length,
+              episodes: eps,
+            ),
+          ],
+        ),
+      );
+    });
+    return result;
+  }
+
+  Widget _buildSeriesSection(SeriesCatalogItem series) {
+    final seasons = series.seasons;
+    final int activeSeasonNum = _selectedSeasonBySeries[series.id] ??
+        (seasons.isNotEmpty ? seasons.first.season : 1);
+
+    final SeriesSeasonItem? activeSeason = seasons.isNotEmpty
+        ? seasons.firstWhere(
+            (s) => s.season == activeSeasonNum,
+            orElse: () => seasons.first,
+          )
+        : null;
+
+    final List<MovieItem> episodes = activeSeason?.episodes ?? [];
+    if (episodes.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const SizedBox(height: 22),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 18),
+          child: Row(
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 3,
+                          ),
+                          decoration: BoxDecoration(
+                            color:
+                                const Color(0xFF00E676).withValues(alpha: 0.16),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: const Color(0xFF00E676)
+                                  .withValues(alpha: 0.45),
+                            ),
+                          ),
+                          child: Text(
+                            "SERIES · ${series.language.toUpperCase()}",
+                            style: const TextStyle(
+                              color: Color(0xFF00E676),
+                              fontSize: 10,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            series.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Color(0xFFF0FDF4),
+                              fontSize: 18,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      "${series.seasonCount} ${series.seasonCount == 1 ? 'Season' : 'Seasons'} · ${series.episodeCount} Episodes · Tap any episode to stream",
+                      style: const TextStyle(
+                        color: Color(0xFF8696A0),
+                        fontSize: 11.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (seasons.length > 1)
+                Row(
+                  children: seasons.map((s) {
+                    final isSel = s.season == activeSeasonNum;
+                    return GestureDetector(
+                      onTap: () => setState(() {
+                        _selectedSeasonBySeries[series.id] = s.season;
+                      }),
+                      child: Container(
+                        margin: const EdgeInsets.only(left: 6),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 5,
+                        ),
+                        decoration: BoxDecoration(
+                          color: isSel
+                              ? const Color(0xFF00E676)
+                              : Colors.white.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Text(
+                          "S${s.season}",
+                          style: TextStyle(
+                            color: isSel
+                                ? const Color(0xFF03120D)
+                                : const Color(0xFFF0FDF4),
+                            fontSize: 11,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 268,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            itemCount: episodes.length,
+            itemBuilder: (context, index) {
+              return _buildPosterCard(episodes[index]);
+            },
+          ),
+        ),
+      ],
     );
   }
 
@@ -391,7 +617,7 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
       child: GestureDetector(
         onTap: () => widget.onPlayMovie(hero),
         child: Container(
-          height: 320,
+          height: 325,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(28),
             border: Border.all(
@@ -412,7 +638,7 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
               fit: StackFit.expand,
               children: [
                 Image.network(
-                  hero.backdropUrl,
+                  hero.posterUrl.isNotEmpty ? hero.posterUrl : hero.backdropUrl,
                   fit: BoxFit.cover,
                   errorBuilder: (_, __, ___) => Container(
                     color: const Color(0xFF091814),
@@ -424,8 +650,8 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                       begin: Alignment.topCenter,
                       end: Alignment.bottomCenter,
                       colors: [
-                        Colors.black.withValues(alpha: 0.15),
-                        const Color(0xFF040B09).withValues(alpha: 0.65),
+                        Colors.black.withValues(alpha: 0.18),
+                        const Color(0xFF040B09).withValues(alpha: 0.68),
                         const Color(0xFF030706).withValues(alpha: 0.96),
                       ],
                       stops: const [0.0, 0.5, 1.0],
@@ -464,18 +690,22 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                             ),
                           ),
                           const SizedBox(width: 8),
-                          const Icon(
-                            Icons.star_rounded,
-                            color: Color(0xFFFBBF24),
-                            size: 16,
-                          ),
-                          const SizedBox(width: 3),
-                          Text(
-                            "${hero.rating}",
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.w800,
-                              fontSize: 13,
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Text(
+                              hero.language,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 10.5,
+                                fontWeight: FontWeight.w700,
+                              ),
                             ),
                           ),
                           const Spacer(),
@@ -512,14 +742,14 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                         overflow: TextOverflow.ellipsis,
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 26,
+                          fontSize: 25,
                           fontWeight: FontWeight.w900,
                           letterSpacing: -0.6,
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        "${hero.releaseYear} · ${hero.viewsLabel} · ${hero.genres.join(' • ')}",
+                        "${hero.releaseYear} · ${hero.language} · ${hero.duration} · ${hero.genres.join(' • ')}",
                         style: const TextStyle(
                           color: Color(0xFF94A3B8),
                           fontSize: 12.5,
@@ -638,7 +868,9 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
             fit: StackFit.expand,
             children: [
               Image.network(
-                movie.backdropUrl,
+                movie.backdropUrl.isNotEmpty
+                    ? movie.backdropUrl
+                    : movie.posterUrl,
                 fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => Container(
                   color: const Color(0xFF0A1815),
@@ -693,7 +925,7 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                                 ),
                               ),
                               Text(
-                                "${(movie.watchProgress * 100).round()}% watched · ${movie.duration}",
+                                "${(movie.watchProgress * 100).round()}% watched · ${movie.language}",
                                 style: const TextStyle(
                                   color: Color(0xFF00E676),
                                   fontSize: 11,
@@ -732,7 +964,7 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
     return GestureDetector(
       onTap: () => widget.onPlayMovie(movie),
       child: Container(
-        width: 156,
+        width: 162,
         margin: const EdgeInsets.only(right: 12),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(22),
@@ -762,6 +994,13 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                       fit: BoxFit.cover,
                       errorBuilder: (_, __, ___) => Container(
                         color: const Color(0xFF0A1815),
+                        child: const Center(
+                          child: Icon(
+                            Icons.movie_creation_outlined,
+                            color: Color(0xFF00E676),
+                            size: 32,
+                          ),
+                        ),
                       ),
                     ),
                     Positioned(
@@ -773,27 +1012,18 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                           vertical: 3,
                         ),
                         decoration: BoxDecoration(
-                          color: Colors.black.withValues(alpha: 0.75),
+                          color: Colors.black.withValues(alpha: 0.78),
                           borderRadius: BorderRadius.circular(10),
                         ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            const Icon(
-                              Icons.star_rounded,
-                              color: Color(0xFFFBBF24),
-                              size: 13,
-                            ),
-                            const SizedBox(width: 3),
-                            Text(
-                              "${movie.rating}",
-                              style: const TextStyle(
-                                color: Colors.white,
-                                fontSize: 11,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
+                        child: Text(
+                          movie.episodeLabel.isNotEmpty
+                              ? movie.episodeLabel
+                              : movie.language,
+                          style: const TextStyle(
+                            color: Color(0xFF00E676),
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
                     ),
@@ -841,7 +1071,7 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      "${movie.releaseYear} · ${movie.genres.first}",
+                      "${movie.releaseYear} · ${movie.language} · ${movie.duration}",
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
@@ -894,6 +1124,10 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                   width: 68,
                   height: 92,
                   color: const Color(0xFF0A1815),
+                  child: const Icon(
+                    Icons.movie_outlined,
+                    color: Color(0xFF00E676),
+                  ),
                 ),
               ),
             ),
@@ -904,26 +1138,35 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                 children: [
                   Row(
                     children: [
-                      const Icon(
-                        Icons.star_rounded,
-                        color: Color(0xFFFBBF24),
-                        size: 14,
-                      ),
-                      const SizedBox(width: 2),
-                      Text(
-                        "${movie.rating}",
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 7,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color:
+                              const Color(0xFF00E676).withValues(alpha: 0.16),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          movie.language,
+                          style: const TextStyle(
+                            color: Color(0xFF00E676),
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w800,
+                          ),
                         ),
                       ),
                       const SizedBox(width: 8),
-                      Text(
-                        "${movie.releaseYear} · ${movie.viewsLabel}",
-                        style: const TextStyle(
-                          color: Color(0xFF8696A0),
-                          fontSize: 11.5,
+                      Expanded(
+                        child: Text(
+                          "${movie.releaseYear} · ${movie.qualityBadge} · ${movie.duration}",
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: Color(0xFF8696A0),
+                            fontSize: 11.5,
+                          ),
                         ),
                       ),
                     ],
@@ -956,23 +1199,37 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
             const SizedBox(width: 8),
             Column(
               children: [
-                GlassIconButton(
-                  icon: Icons.play_arrow_rounded,
-                  tooltip: "Stream Movie",
-                  size: 38,
-                  isAccent: true,
-                  color: const Color(0xFF00E676),
-                  onTap: () => widget.onPlayMovie(movie),
-                ),
-                const SizedBox(height: 6),
-                GlassIconButton(
-                  icon: saved
-                      ? Icons.bookmark_rounded
-                      : Icons.bookmark_border_rounded,
-                  tooltip: "Toggle Watchlist",
-                  size: 34,
-                  color: saved ? const Color(0xFF00E676) : Colors.white70,
+                GestureDetector(
                   onTap: () => widget.onToggleWatchlist(movie.id),
+                  child: Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: 0.06),
+                      shape: BoxShape.circle,
+                    ),
+                    child: Icon(
+                      saved
+                          ? Icons.bookmark_rounded
+                          : Icons.bookmark_border_rounded,
+                      color: saved ? const Color(0xFF00E676) : Colors.white70,
+                      size: 18,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  width: 36,
+                  height: 36,
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF00E676),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(
+                    Icons.play_arrow_rounded,
+                    color: Color(0xFF03120D),
+                    size: 22,
+                  ),
                 ),
               ],
             ),
