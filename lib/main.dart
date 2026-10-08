@@ -428,9 +428,7 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
                 duration: const Duration(milliseconds: 240),
                 child: !_hasDismissedWelcome
                     ? WelcomePage(
-                        featuredMovies:
-                            _movies.where((m) => m.isFeatured).toList(),
-                        onEnterCinema: () {
+                        onGetStarted: () {
                           _navigateTo(hasDismissedWelcome: true);
                         },
                       )
@@ -475,8 +473,8 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
                 bottom: 12,
                 child: FluidGlassBottomBar(
                   selectedIndex: _activeNavIndex,
-                  watchlistCount: _watchlistIds.length,
-                  onTap: (idx) {
+                  unreadChatsCount: _watchlistIds.length,
+                  onTabSelected: (idx) {
                     _navigateTo(navIndex: idx, clearPlayingMovie: true);
                   },
                 ),
