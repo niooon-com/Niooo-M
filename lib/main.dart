@@ -1,4 +1,5 @@
 import "dart:async";
+import "dart:ui";
 import "package:flutter/material.dart";
 import "package:flutter/services.dart";
 
@@ -9,11 +10,7 @@ import "pages/explore_page.dart";
 import "pages/watchlist_page.dart";
 import "pages/profile_settings_page.dart";
 import "pages/movie_player_page.dart";
-import "pages/admin_panel_page.dart";
-import "services/auth_bridge_service.dart";
 import "widgets/fluid_glass_bottom_bar.dart";
-
-import "dart:ui";
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -55,20 +52,17 @@ class NioooMovieApp extends StatelessWidget {
 class _NavHistorySnapshot {
   final int navIndex;
   final String? playingMovieId;
-  final bool isFullScreenAdminOpen;
   final bool hasDismissedWelcome;
 
   const _NavHistorySnapshot({
     required this.navIndex,
     required this.playingMovieId,
-    required this.isFullScreenAdminOpen,
     required this.hasDismissedWelcome,
   });
 
   bool matches(_NavHistorySnapshot other) {
     return navIndex == other.navIndex &&
         playingMovieId == other.playingMovieId &&
-        isFullScreenAdminOpen == other.isFullScreenAdminOpen &&
         hasDismissedWelcome == other.hasDismissedWelcome;
   }
 }
@@ -83,17 +77,13 @@ class NioooCinemaMainScreen extends StatefulWidget {
 class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
     with WidgetsBindingObserver {
   late List<MovieItem> _movies;
-  final Set<String> _likedMovieIds = {"Zk2Rbvkpl9tqzjD", "MPDylDpxp9h0Jr"};
-  final Set<String> _watchlistIds = {
-    "Zk2Rbvkpl9tqzjD",
-    "MPDylDpxp9h0Jr",
-    "kwa24xVPj7FOVWm",
-  };
+  List<SeriesCatalogItem> _seriesList = [];
+  final Set<String> _likedMovieIds = {};
+  final Set<String> _watchlistIds = {};
 
   bool _hasDismissedWelcome =
-      true; // Direct movie platform access without mandatory login
-  bool _isSyncingStreamtape = false;
-  bool _isFullScreenAdminOpen = false;
+      true; // Direct movie platform access without login
+  bool _isSyncingCatalog = false;
   bool _isPlayerFullscreen = false;
   int _activeNavIndex = 0; // 0: Home, 1: Explore, 2: Watchlist, 3: Profile
   String? _activePlayingMovieId;
@@ -103,42 +93,24 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
   final List<_NavHistorySnapshot> _backHistoryStack = [];
   DateTime? _lastRootBackPressTime;
 
-  String _streamQuality = "4K IMAX HDR";
-  bool _dolbyAtmosEnabled = true;
-  bool _autoplayTrailers = true;
-
-  int _lastHandledRealtimeMs = 0;
-
-  void _onAuthOrRealtimeChanged() {
-    final latestMs = AuthBridgeService.instance.lastRealtimeMovieSyncMs;
-    if (latestMs > _lastHandledRealtimeMs) {
-      _lastHandledRealtimeMs = latestMs;
-      _syncFromStreamtapeAccount(forceRefresh: true);
-    }
-  }
-
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    AuthBridgeService.instance.init();
-    AuthBridgeService.instance.addListener(_onAuthOrRealtimeChanged);
-    // Load only previously verified live Streamtape movies from local device cache (for offline/instant launch),
-    // and immediately replace with live Streamtape API + Firebase verification as soon as internet responds!
     _movies = MovieCatalogData.loadCachedVerifiedCatalog();
-    _syncFromStreamtapeAccount(forceRefresh: true);
+    _seriesList = MovieCatalogData.latestSeriesList;
+    _syncFromPublicCatalogApi(forceRefresh: true);
 
-    // Real-time background sync with Firebase Firestore & Streamtape every 12 seconds
+    // Real-time background sync with Niooo M Public API every 18 seconds
     _catalogAutoSyncTimer = Timer.periodic(
-      const Duration(seconds: 12),
-      (_) => _syncFromStreamtapeAccount(forceRefresh: true),
+      const Duration(seconds: 18),
+      (_) => _syncFromPublicCatalogApi(forceRefresh: true),
     );
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
-    AuthBridgeService.instance.removeListener(_onAuthOrRealtimeChanged);
     _catalogAutoSyncTimer?.cancel();
     super.dispose();
   }
@@ -146,14 +118,13 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed) {
-      _syncFromStreamtapeAccount(forceRefresh: true);
+      _syncFromPublicCatalogApi(forceRefresh: true);
     }
   }
 
   _NavHistorySnapshot get _currentSnapshot => _NavHistorySnapshot(
         navIndex: _activeNavIndex,
         playingMovieId: _activePlayingMovieId,
-        isFullScreenAdminOpen: _isFullScreenAdminOpen,
         hasDismissedWelcome: _hasDismissedWelcome,
       );
 
@@ -172,19 +143,16 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
     int? navIndex,
     String? playingMovieId,
     bool clearPlayingMovie = false,
-    bool? isFullScreenAdminOpen,
     bool? hasDismissedWelcome,
   }) {
     final targetNavIndex = navIndex ?? _activeNavIndex;
     final targetMovieId =
         clearPlayingMovie ? null : (playingMovieId ?? _activePlayingMovieId);
-    final targetAdmin = isFullScreenAdminOpen ?? _isFullScreenAdminOpen;
     final targetWelcome = hasDismissedWelcome ?? _hasDismissedWelcome;
 
     final nextSnap = _NavHistorySnapshot(
       navIndex: targetNavIndex,
       playingMovieId: targetMovieId,
-      isFullScreenAdminOpen: targetAdmin,
       hasDismissedWelcome: targetWelcome,
     );
 
@@ -194,32 +162,24 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
       _pushCurrentStateToHistory();
       _activeNavIndex = targetNavIndex;
       _activePlayingMovieId = targetMovieId;
-      _isFullScreenAdminOpen = targetAdmin;
       _hasDismissedWelcome = targetWelcome;
     });
   }
 
   /// Handles hardware/gesture Back button and in-app Back actions sequentially & smoothly
   bool _handleSequentialBack() {
-    // 1. If there are previous states in our navigation history stack, pop one by one
     while (_backHistoryStack.isNotEmpty) {
       final previous = _backHistoryStack.removeLast();
       if (!previous.matches(_currentSnapshot)) {
         setState(() {
           _activeNavIndex = previous.navIndex;
           _activePlayingMovieId = previous.playingMovieId;
-          _isFullScreenAdminOpen = previous.isFullScreenAdminOpen;
           _hasDismissedWelcome = previous.hasDismissedWelcome;
         });
         return true;
       }
     }
 
-    // 2. Fallback safety checks if history stack is empty but user is not on Home tab
-    if (_isFullScreenAdminOpen) {
-      setState(() => _isFullScreenAdminOpen = false);
-      return true;
-    }
     if (_activePlayingMovieId != null) {
       setState(() => _activePlayingMovieId = null);
       return true;
@@ -233,7 +193,6 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
       return true;
     }
 
-    //Already at root Home screen
     return false;
   }
 
@@ -254,13 +213,10 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
       return;
     }
 
-    // Step back smoothly to the previous screen/movie/tab if available
-    final steppedBack = _handleSequentialBack();
-    if (steppedBack) {
-      return;
-    }
+    final handled = _handleSequentialBack();
+    if (handled) return;
 
-    // On Root Home screen: require double-back within 2 seconds before exiting app
+    // At root Home screen: require double-press within 2 seconds to exit app
     final now = DateTime.now();
     if (_lastRootBackPressTime == null ||
         now.difference(_lastRootBackPressTime!) > const Duration(seconds: 2)) {
@@ -270,7 +226,6 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
         SnackBar(
           backgroundColor: const Color(0xFF071A14),
           behavior: SnackBarBehavior.floating,
-          margin: const EdgeInsets.fromLTRB(24, 0, 24, 90),
           duration: const Duration(seconds: 2),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
@@ -278,24 +233,13 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
               color: const Color(0xFF00E676).withValues(alpha: 0.45),
             ),
           ),
-          content: const Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                Icons.exit_to_app_rounded,
-                color: Color(0xFF00E676),
-                size: 18,
-              ),
-              SizedBox(width: 8),
-              Text(
-                "Press back again to exit Niooo M",
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 13,
-                  fontWeight: FontWeight.w700,
-                ),
-              ),
-            ],
+          content: const Text(
+            "Press back again to exit Niooo M",
+            style: TextStyle(
+              color: Color(0xFFF0FDF4),
+              fontSize: 12.5,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ),
       );
@@ -305,19 +249,46 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
     SystemNavigator.pop();
   }
 
-  Future<void> _syncFromStreamtapeAccount({bool forceRefresh = true}) async {
-    if (_isSyncingStreamtape) return;
-    setState(() => _isSyncingStreamtape = true);
-    final liveCatalog = await MovieCatalogData.fetchLiveStreamtapeCatalog(
-      forceRefresh: forceRefresh,
-    );
+  Future<void> _syncFromPublicCatalogApi({bool forceRefresh = false}) async {
+    if (_isSyncingCatalog) return;
+    setState(() => _isSyncingCatalog = true);
+
+    final snapshot = await MovieCatalogData.fetchLiveCatalogSnapshot();
     if (!mounted) return;
-    setState(() {
-      if (liveCatalog.isNotEmpty) {
-        _movies = liveCatalog;
-      }
-      _isSyncingStreamtape = false;
-    });
+
+    if (snapshot != null && snapshot.allItems.isNotEmpty) {
+      // Preserve watchProgress & comments for any movies already in state
+      final Map<String, MovieItem> existingById = {
+        for (final m in _movies) m.id: m,
+      };
+
+      final List<MovieItem> merged = snapshot.allItems.map((item) {
+        final prev = existingById[item.id];
+        if (prev != null) {
+          return item.copyWith(
+            watchProgress: prev.watchProgress,
+            likesCount: prev.likesCount,
+            sharesCount: prev.sharesCount,
+            comments: prev.comments.length > item.comments.length
+                ? prev.comments
+                : item.comments,
+          );
+        }
+        return item;
+      }).toList();
+
+      setState(() {
+        _movies = merged;
+        _seriesList = snapshot.seriesList;
+        _isSyncingCatalog = false;
+        if (_activePlayingMovieId != null &&
+            !_movies.any((m) => m.id == _activePlayingMovieId)) {
+          _activePlayingMovieId = null;
+        }
+      });
+    } else {
+      setState(() => _isSyncingCatalog = false);
+    }
   }
 
   MovieItem? get _activePlayingMovie {
@@ -326,50 +297,6 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
       if (m.id == _activePlayingMovieId) return m;
     }
     return null;
-  }
-
-  void _openMoviePlayer(MovieItem movie) {
-    _navigateTo(
-      playingMovieId: movie.id,
-      isFullScreenAdminOpen: false,
-    );
-  }
-
-  void _upsertMovieLocally(MovieItem updatedMovie) {
-    setState(() {
-      final idx = _movies.indexWhere((m) => m.id == updatedMovie.id);
-      if (idx >= 0) {
-        _movies[idx] = updatedMovie;
-      } else {
-        _movies = [updatedMovie, ..._movies];
-      }
-      MovieCatalogData.saveVerifiedCatalogToCache(_movies);
-    });
-  }
-
-  void _deleteMovieLocally(String movieId) {
-    setState(() {
-      _movies = _movies.where((m) => m.id != movieId).toList();
-      MovieCatalogData.saveVerifiedCatalogToCache(_movies);
-    });
-  }
-
-  void _toggleLikeMovie(String movieId) {
-    setState(() {
-      final isCurrentlyLiked = _likedMovieIds.contains(movieId);
-      if (isCurrentlyLiked) {
-        _likedMovieIds.remove(movieId);
-      } else {
-        _likedMovieIds.add(movieId);
-      }
-
-      _movies = _movies.map((m) {
-        if (m.id != movieId) return m;
-        final updatedLikes =
-            isCurrentlyLiked ? (m.likesCount - 1) : (m.likesCount + 1);
-        return m.copyWith(likesCount: updatedLikes < 0 ? 0 : updatedLikes);
-      }).toList();
-    });
   }
 
   void _toggleWatchlist(String movieId) {
@@ -382,7 +309,24 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
     });
   }
 
-  void _incrementShareCount(String movieId) {
+  void _toggleLikeMovie(String movieId) {
+    setState(() {
+      final isLiked = _likedMovieIds.contains(movieId);
+      if (isLiked) {
+        _likedMovieIds.remove(movieId);
+      } else {
+        _likedMovieIds.add(movieId);
+      }
+      _movies = _movies.map((m) {
+        if (m.id != movieId) return m;
+        return m.copyWith(
+          likesCount: isLiked ? (m.likesCount - 1) : (m.likesCount + 1),
+        );
+      }).toList();
+    });
+  }
+
+  void _shareMovie(String movieId) {
     setState(() {
       _movies = _movies.map((m) {
         if (m.id != movieId) return m;
@@ -391,19 +335,14 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
     });
   }
 
-  void _addCommentToMovie(String movieId, String commentText) {
-    final trimmed = commentText.trim();
-    if (trimmed.isEmpty) return;
-
-    final user = AuthBridgeService.instance.user;
+  void _addMovieComment(String movieId, String commentText) {
     final newComment = MovieComment(
       id: "c_${DateTime.now().millisecondsSinceEpoch}",
-      authorName: user?.displayName ?? "Cinema Viewer",
-      authorHandle: user?.handle ?? "@niooo_viewer",
-      avatarUrl: user?.avatarUrl.isNotEmpty == true
-          ? user!.avatarUrl
-          : "https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=200&q=80",
-      comment: trimmed,
+      authorName: "Cinema Viewer",
+      authorHandle: "@niooo_viewer",
+      avatarUrl:
+          "https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?auto=format&fit=crop&w=200&q=80",
+      comment: commentText,
       timeAgo: "Just now",
       likes: 1,
     );
@@ -411,207 +350,136 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
     setState(() {
       _movies = _movies.map((m) {
         if (m.id != movieId) return m;
-        return m.copyWith(
-          comments: [newComment, ...m.comments],
-        );
+        return m.copyWith(comments: [newComment, ...m.comments]);
       }).toList();
     });
   }
 
-  void _updateMovieProgress(String movieId, double ratio) {
-    if (ratio <= 0.02) return;
+  void _openMoviePlayer(MovieItem movie) {
+    _navigateTo(playingMovieId: movie.id);
+  }
+
+  void _updateMovieProgress(String movieId, double progress) {
     setState(() {
       _movies = _movies.map((m) {
         if (m.id != movieId) return m;
-        return m.copyWith(watchProgress: ratio.clamp(0.05, 0.98));
+        return m.copyWith(watchProgress: progress.clamp(0.0, 1.0));
       }).toList();
     });
-  }
-
-  String get _currentViewAnimationKey {
-    if (!_hasDismissedWelcome) return "welcome";
-    if (_isFullScreenAdminOpen) return "admin_panel";
-    if (_activePlayingMovieId != null) return "player_$_activePlayingMovieId";
-    return "tab_$_activeNavIndex";
   }
 
   @override
   Widget build(BuildContext context) {
-    final activeMovie = _activePlayingMovie;
-    final bool hideBottomNav =
-        !_hasDismissedWelcome || activeMovie != null || _isFullScreenAdminOpen;
-    final bool isEdgeToEdgeFullscreen = activeMovie != null &&
-        (_isPlayerFullscreen ||
-            MediaQuery.of(context).orientation == Orientation.landscape);
+    final playingMovie = _activePlayingMovie;
+    final mediaOrientation = MediaQuery.of(context).orientation;
+    final bool hideBarsForFullscreen = playingMovie != null &&
+        (_isPlayerFullscreen || mediaOrientation == Orientation.landscape);
 
     return PopScope(
       canPop: false,
       onPopInvokedWithResult: _onSystemPopInvokedWithResult,
       child: Scaffold(
         backgroundColor: const Color(0xFF030706),
-        resizeToAvoidBottomInset: true,
         body: Stack(
           children: [
-            // Deep pitch-black and emerald cinema backdrop
-            Positioned.fill(
+            // Ambient Deep Emerald & Obsidian Cinema Glow
+            Positioned(
+              top: -120,
+              left: -90,
               child: Container(
-                decoration: const BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
+                width: 340,
+                height: 340,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
                     colors: [
-                      Color(0xFF020504),
-                      Color(0xFF05100D),
-                      Color(0xFF020403),
+                      const Color(0xFF00E676).withValues(alpha: 0.14),
+                      Colors.transparent,
                     ],
                   ),
                 ),
               ),
             ),
-            // Top-left luminous emerald aurora orb
             Positioned(
-              top: -130,
-              left: -110,
-              child: IgnorePointer(
-                child: Container(
-                  width: 460,
-                  height: 460,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: RadialGradient(
-                      colors: [
-                        const Color(0xFF00E676).withValues(alpha: 0.18),
-                        const Color(0xFF10B981).withValues(alpha: 0.07),
-                        Colors.transparent,
-                      ],
-                      stops: const [0.0, 0.45, 1.0],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            // Center-right soft liquid teal-emerald glow
-            Positioned(
-              top: 200,
-              right: -140,
-              child: IgnorePointer(
-                child: Container(
-                  width: 420,
-                  height: 420,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: RadialGradient(
-                      colors: [
-                        const Color(0xFF10B981).withValues(alpha: 0.15),
-                        const Color(0xFF047857).withValues(alpha: 0.05),
-                        Colors.transparent,
-                      ],
-                      stops: const [0.0, 0.5, 1.0],
-                    ),
+              bottom: -140,
+              right: -90,
+              child: Container(
+                width: 360,
+                height: 360,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    colors: [
+                      const Color(0xFF059669).withValues(alpha: 0.14),
+                      Colors.transparent,
+                    ],
                   ),
                 ),
               ),
             ),
 
-            // Full-Screen Edge-to-Edge Body Content with Smooth Animated Transitions
+            // Main Content Area
             SafeArea(
-              top: !isEdgeToEdgeFullscreen,
-              bottom: !isEdgeToEdgeFullscreen,
-              left: !isEdgeToEdgeFullscreen,
-              right: !isEdgeToEdgeFullscreen,
+              top: !hideBarsForFullscreen,
+              bottom: !hideBarsForFullscreen,
+              left: !hideBarsForFullscreen,
+              right: !hideBarsForFullscreen,
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 240),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
-                transitionBuilder: (Widget child, Animation<double> animation) {
-                  final fade = CurvedAnimation(
-                    parent: animation,
-                    curve: Curves.easeOutCubic,
-                  );
-                  final slide = Tween<Offset>(
-                    begin: const Offset(0.03, 0.0),
-                    end: Offset.zero,
-                  ).animate(fade);
-                  return FadeTransition(
-                    opacity: fade,
-                    child: SlideTransition(
-                      position: slide,
-                      child: child,
-                    ),
-                  );
-                },
-                child: KeyedSubtree(
-                  key: ValueKey<String>(_currentViewAnimationKey),
-                  child: !_hasDismissedWelcome
-                      ? WelcomePage(
-                          onGetStarted: () => _navigateTo(
-                            hasDismissedWelcome: true,
-                          ),
-                        )
-                      : _isFullScreenAdminOpen
-                          ? FullScreenAdminPanelPage(
-                              movies: _movies,
-                              adminEmail:
-                                  AuthBridgeService.instance.user?.email ??
-                                      "mdsaiqulislamraihan72@gmail.com",
-                              onClose: () => _handleSequentialBack(),
-                              onRefreshCatalog: () =>
-                                  _syncFromStreamtapeAccount(
-                                      forceRefresh: true),
-                              onPlayMovie: _openMoviePlayer,
-                              onUpdateMovieLocally: _upsertMovieLocally,
-                              onDeleteMovieLocally: _deleteMovieLocally,
-                            )
-                          : (activeMovie != null
-                              ? MoviePlayerPage(
-                                  movie: activeMovie,
-                                  allMovies: _movies,
-                                  isLiked:
-                                      _likedMovieIds.contains(activeMovie.id),
-                                  isBookmarked:
-                                      _watchlistIds.contains(activeMovie.id),
-                                  onBack: () {
-                                    setState(() => _isPlayerFullscreen = false);
-                                    _handleSequentialBack();
-                                  },
-                                  onToggleLike: () =>
-                                      _toggleLikeMovie(activeMovie.id),
-                                  onToggleBookmark: () =>
-                                      _toggleWatchlist(activeMovie.id),
-                                  onShareMovie: () =>
-                                      _incrementShareCount(activeMovie.id),
-                                  onAddComment: (comment) =>
-                                      _addCommentToMovie(
-                                          activeMovie.id, comment),
-                                  onSelectOtherMovie: (nextMovie) =>
-                                      _openMoviePlayer(nextMovie),
-                                  onUpdateProgress: (ratio) =>
-                                      _updateMovieProgress(
-                                          activeMovie.id, ratio),
-                                  onFullscreenChanged: (isFs) {
-                                    if (_isPlayerFullscreen != isFs) {
-                                      setState(
-                                          () => _isPlayerFullscreen = isFs);
-                                    }
-                                  },
-                                )
-                              : _buildTabContent()),
-                ),
+                child: !_hasDismissedWelcome
+                    ? WelcomePage(
+                        featuredMovies:
+                            _movies.where((m) => m.isFeatured).toList(),
+                        onEnterCinema: () {
+                          _navigateTo(hasDismissedWelcome: true);
+                        },
+                      )
+                    : playingMovie != null
+                        ? MoviePlayerPage(
+                            key: ValueKey("player_${playingMovie.id}"),
+                            movie: playingMovie,
+                            allMovies: _movies,
+                            isLiked: _likedMovieIds.contains(playingMovie.id),
+                            isBookmarked:
+                                _watchlistIds.contains(playingMovie.id),
+                            onBack: () {
+                              _handleSequentialBack();
+                            },
+                            onFullscreenChanged: (isFull) {
+                              if (_isPlayerFullscreen != isFull) {
+                                setState(() => _isPlayerFullscreen = isFull);
+                              }
+                            },
+                            onToggleLike: () =>
+                                _toggleLikeMovie(playingMovie.id),
+                            onToggleBookmark: () =>
+                                _toggleWatchlist(playingMovie.id),
+                            onShareMovie: () => _shareMovie(playingMovie.id),
+                            onAddComment: (txt) =>
+                                _addMovieComment(playingMovie.id, txt),
+                            onSelectOtherMovie: (nextMovie) {
+                              _openMoviePlayer(nextMovie);
+                            },
+                            onUpdateProgress: (p) =>
+                                _updateMovieProgress(playingMovie.id, p),
+                          )
+                        : _buildMainTabs(),
               ),
             ),
 
-            // Floating Liquid Glass Bottom Bar when browsing catalog tabs
-            if (!hideBottomNav)
-              FluidGlassBottomBar(
-                selectedIndex: _activeNavIndex,
-                unreadChatsCount: _watchlistIds.length,
-                onTabSelected: (index) {
-                  _navigateTo(
-                    navIndex: index,
-                    clearPlayingMovie: true,
-                    isFullScreenAdminOpen: false,
-                  );
-                },
+            // Floating Liquid Glass Bottom Navigation Bar (hidden when Welcome or MoviePlayer is open)
+            if (_hasDismissedWelcome && playingMovie == null)
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: 12,
+                child: FluidGlassBottomBar(
+                  selectedIndex: _activeNavIndex,
+                  watchlistCount: _watchlistIds.length,
+                  onTap: (idx) {
+                    _navigateTo(navIndex: idx, clearPlayingMovie: true);
+                  },
+                ),
               ),
           ],
         ),
@@ -619,53 +487,47 @@ class _NioooCinemaMainScreenState extends State<NioooCinemaMainScreen>
     );
   }
 
-  Widget _buildTabContent() {
-    if (_activeNavIndex == 1) {
-      return ExplorePage(
-        movies: _movies,
-        watchlistIds: _watchlistIds,
-        onPlayMovie: _openMoviePlayer,
-        onToggleWatchlist: _toggleWatchlist,
-      );
-    } else if (_activeNavIndex == 2) {
-      return WatchlistPage(
-        movies: _movies,
-        watchlistIds: _watchlistIds,
-        onPlayMovie: _openMoviePlayer,
-        onToggleWatchlist: _toggleWatchlist,
-        onExploreMovies: () => _navigateTo(navIndex: 1),
-      );
-    } else if (_activeNavIndex == 3) {
-      final watchedCount =
-          _movies.where((m) => m.watchProgress > 0.05).length;
-      return ProfileSettingsPage(
-        movies: _movies,
-        displayName: "Raihan Cinema",
-        handle: "@niooo_m",
-        membershipTier: "IMAX 4K VIP",
-        streamQuality: _streamQuality,
-        dolbyAtmosEnabled: _dolbyAtmosEnabled,
-        autoplayTrailers: _autoplayTrailers,
-        watchlistCount: _watchlistIds.length,
-        watchedCount: watchedCount,
-        onQualityChanged: (q) => setState(() => _streamQuality = q),
-        onToggleDolbyAtmos: (v) => setState(() => _dolbyAtmosEnabled = v),
-        onToggleAutoplay: (v) => setState(() => _autoplayTrailers = v),
-        onReturnToWelcome: () => _navigateTo(hasDismissedWelcome: false),
-        onOpenFullScreenAdminPanel: () =>
-            _navigateTo(isFullScreenAdminOpen: true),
-      );
+  Widget _buildMainTabs() {
+    switch (_activeNavIndex) {
+      case 0:
+        return HomeMoviesPage(
+          key: const ValueKey("tab_home"),
+          movies: _movies,
+          seriesList: _seriesList,
+          watchlistIds: _watchlistIds,
+          onPlayMovie: _openMoviePlayer,
+          onToggleWatchlist: _toggleWatchlist,
+          onOpenWatchlistTab: () =>
+              _navigateTo(navIndex: 2, clearPlayingMovie: true),
+          onOpenProfileTab: () =>
+              _navigateTo(navIndex: 3, clearPlayingMovie: true),
+          onRefreshStreamtape: () =>
+              _syncFromPublicCatalogApi(forceRefresh: true),
+          isSyncingStreamtape: _isSyncingCatalog,
+        );
+      case 1:
+        return ExplorePage(
+          key: const ValueKey("tab_explore"),
+          movies: _movies,
+          watchlistIds: _watchlistIds,
+          onPlayMovie: _openMoviePlayer,
+          onToggleWatchlist: _toggleWatchlist,
+        );
+      case 2:
+        return WatchlistPage(
+          key: const ValueKey("tab_watchlist"),
+          movies: _movies,
+          watchlistIds: _watchlistIds,
+          onPlayMovie: _openMoviePlayer,
+          onToggleWatchlist: _toggleWatchlist,
+          onExploreMovies: () =>
+              _navigateTo(navIndex: 1, clearPlayingMovie: true),
+        );
+      case 3:
+      default:
+        return const ProfileSettingsPage(
+          key: ValueKey("tab_profile"),
+        );
     }
-
-    return HomeMoviesPage(
-      movies: _movies,
-      watchlistIds: _watchlistIds,
-      isSyncingStreamtape: _isSyncingStreamtape,
-      onPlayMovie: _openMoviePlayer,
-      onToggleWatchlist: _toggleWatchlist,
-      onOpenSearch: () => _navigateTo(navIndex: 1),
-      onRefreshStreamtape: () =>
-          _syncFromStreamtapeAccount(forceRefresh: true),
-    );
   }
 }
