@@ -26,31 +26,41 @@ class _ExplorePageState extends State<ExplorePage> {
   String _selectedGenre = "All";
   String _sortBy = "Rating";
 
-  static const List<String> _genres = [
-    "All",
-    "Sci-Fi",
-    "Action",
-    "Thriller",
-    "Fantasy",
-    "Drama",
-    "Crime",
-    "Mystery",
-  ];
+  List<String> _buildFilters() {
+    final Set<String> filters = {"All", "Movies", "Web Series"};
+    for (final m in widget.movies) {
+      if (m.language.trim().isNotEmpty) {
+        filters.add(m.language.trim());
+      }
+      for (final g in m.genres) {
+        if (g.trim().isNotEmpty) {
+          filters.add(g.trim());
+        }
+      }
+    }
+    return filters.toList();
+  }
 
   @override
   Widget build(BuildContext context) {
+    final filters = _buildFilters();
     final filtered = widget.movies.where((m) {
       final q = _searchQuery.trim().toLowerCase();
       final matchesQuery = q.isEmpty ||
           m.title.toLowerCase().contains(q) ||
-          m.director.toLowerCase().contains(q) ||
-          m.genres.any((g) => g.toLowerCase().contains(q)) ||
-          m.cast.any((c) => c.name.toLowerCase().contains(q));
+          m.rawTitle.toLowerCase().contains(q) ||
+          m.seriesName.toLowerCase().contains(q) ||
+          m.language.toLowerCase().contains(q) ||
+          m.genres.any((g) => g.toLowerCase().contains(q));
       if (!matchesQuery) return false;
-      if (_selectedGenre != "All" && !m.genres.contains(_selectedGenre)) {
-        return false;
+      if (_selectedGenre == "All") return true;
+      if (_selectedGenre == "Movies") return !m.isEpisode;
+      if (_selectedGenre == "Web Series") return m.isEpisode;
+      if (m.language.toLowerCase() == _selectedGenre.toLowerCase()) return true;
+      if (m.genres.any((g) => g.toLowerCase() == _selectedGenre.toLowerCase())) {
+        return true;
       }
-      return true;
+      return false;
     }).toList();
 
     if (_sortBy == "Rating") {
@@ -137,7 +147,7 @@ class _ExplorePageState extends State<ExplorePage> {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
-              children: _genres.map((genre) {
+              children: filters.map((genre) {
                 final selected = _selectedGenre == genre;
                 return GestureDetector(
                   onTap: () => setState(() => _selectedGenre = genre),
@@ -247,24 +257,15 @@ class _ExplorePageState extends State<ExplorePage> {
                                           .withValues(alpha: 0.75),
                                       borderRadius: BorderRadius.circular(10),
                                     ),
-                                    child: Row(
-                                      mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        const Icon(
-                                          Icons.star_rounded,
-                                          color: Color(0xFFFBBF24),
-                                          size: 13,
-                                        ),
-                                        const SizedBox(width: 3),
-                                        Text(
-                                          "${movie.rating}",
-                                          style: const TextStyle(
-                                            color: Colors.white,
-                                            fontSize: 11,
-                                            fontWeight: FontWeight.bold,
-                                          ),
-                                        ),
-                                      ],
+                                    child: Text(
+                                      movie.episodeLabel.isNotEmpty
+                                          ? movie.episodeLabel
+                                          : movie.language,
+                                      style: const TextStyle(
+                                        color: Color(0xFF00E676),
+                                        fontSize: 10.5,
+                                        fontWeight: FontWeight.bold,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -331,7 +332,7 @@ class _ExplorePageState extends State<ExplorePage> {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  "${movie.releaseYear} · ${movie.genres.join(', ')}",
+                                  "${movie.releaseYear} · ${movie.language} · ${movie.duration}",
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
                                   style: const TextStyle(
