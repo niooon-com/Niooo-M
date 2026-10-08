@@ -252,7 +252,7 @@ class _HomeMoviesPageState extends State<HomeMoviesPage> {
                       size: 38,
                       isAccent: widget.isSyncingStreamtape,
                       color: const Color(0xFF00E676),
-                      onTap: widget.onRefreshStreamtape,
+                      onTap: widget.onRefreshStreamtape!,
                     ),
                     const SizedBox(width: 8),
                   ],
